@@ -18,6 +18,7 @@ interface PdfDocument {
   isLoading: boolean;
   error?: string;
   file?: File; // Armazena o arquivo quando é upload
+  initialPage?: number; // Página inicial a ser aberta (do hash #page=N)
 }
 
 @Component({
@@ -85,16 +86,20 @@ export class PdfViewerComponent implements OnInit {
     if (urls.length === 0) return;
 
     // Cria os documentos
-    const docs: PdfDocument[] = urls.map((url, index) => ({
-      id: `pdf-${index}-${Date.now()}`,
-      url: decodeURIComponent(url),
-      name: this.extractFileName(url, index),
-      doc: null,
-      totalPages: 0,
-      isLoaded: false,
-      isLoading: false,
-      error: undefined
-    }));
+    const docs: PdfDocument[] = urls.map((url, index) => {
+      const initialPage = this.extractPageFromUrl(url);
+      return {
+        id: `pdf-${index}-${Date.now()}`,
+        url: decodeURIComponent(url).split('#')[0], // Remove hash da URL
+        name: this.extractFileName(url, index),
+        doc: null,
+        totalPages: 0,
+        isLoaded: false,
+        isLoading: false,
+        error: undefined,
+        initialPage: initialPage
+      };
+    });
 
     this.pdfDocuments.set(docs);
     this.pdfLoaded.set(true);
@@ -147,8 +152,18 @@ export class PdfViewerComponent implements OnInit {
       // Se é o documento ativo, renderiza
       if (this.activeDocumentIndex() === index) {
         this.totalPages.set(pdfDoc.numPages);
-        this.currentPage.set(1);
-        await this.renderPage(1);
+        
+        // Usa a página inicial se especificada na URL, senão começa na página 1
+        const startPage = doc.initialPage && doc.initialPage > 0 && doc.initialPage <= pdfDoc.numPages 
+          ? doc.initialPage 
+          : 1;
+        
+        if (startPage !== 1) {
+          console.log(`[PDF Viewer] Opening PDF at page ${startPage} (from URL hash)`);
+        }
+        
+        this.currentPage.set(startPage);
+        await this.renderPage(startPage);
       }
 
       console.log(`[PDF Viewer] PDF ${index + 1} loaded successfully:`, pdfDoc.numPages, 'pages');
@@ -189,7 +204,9 @@ export class PdfViewerComponent implements OnInit {
   private extractFileName(url: string, index: number): string {
     try {
       const decodedUrl = decodeURIComponent(url);
-      const urlObj = new URL(decodedUrl);
+      // Remove hash da URL para extrair o nome do arquivo
+      const urlWithoutHash = decodedUrl.split('#')[0];
+      const urlObj = new URL(urlWithoutHash);
       const pathname = urlObj.pathname;
       const fileName = pathname.split('/').pop() || '';
       
@@ -200,6 +217,34 @@ export class PdfViewerComponent implements OnInit {
       return `Documento ${index + 1}`;
     } catch {
       return `Documento ${index + 1}`;
+    }
+  }
+
+  private extractPageFromUrl(url: string): number | undefined {
+    try {
+      const decodedUrl = decodeURIComponent(url);
+      
+      // Verifica se há hash na URL
+      if (!decodedUrl.includes('#')) {
+        return undefined;
+      }
+
+      // Extrai o hash
+      const hash = decodedUrl.split('#')[1];
+      
+      // Procura por page=N no hash
+      const pageMatch = hash.match(/page=(\d+)/i);
+      
+      if (pageMatch && pageMatch[1]) {
+        const pageNum = parseInt(pageMatch[1], 10);
+        console.log(`[PDF Viewer] Found page number in URL: ${pageNum}`);
+        return pageNum;
+      }
+
+      return undefined;
+    } catch (error) {
+      console.warn('[PDF Viewer] Error extracting page from URL:', error);
+      return undefined;
     }
   }
 
@@ -214,11 +259,17 @@ export class PdfViewerComponent implements OnInit {
 
     const doc = this.activeDocument();
     if (doc && doc.isLoaded) {
-      // Restaura com o zoom atual (persistente) e volta para página 1
+      // Restaura com o zoom atual (persistente)
       this.totalPages.set(doc.totalPages);
-      this.currentPage.set(1);
+      
+      // Usa a página inicial se especificada na URL, senão volta para página 1
+      const startPage = doc.initialPage && doc.initialPage > 0 && doc.initialPage <= doc.totalPages
+        ? doc.initialPage
+        : 1;
+      
+      this.currentPage.set(startPage);
       // scale mantém o valor atual (persistente entre documentos)
-      this.renderPage(1);
+      this.renderPage(startPage);
     } else if (doc && !doc.isLoading) {
       // Carrega o documento se ainda não foi carregado
       this.loadPdfDocument(index);

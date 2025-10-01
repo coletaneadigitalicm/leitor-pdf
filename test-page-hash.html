@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teste - Abertura em Página Específica (#page=N)</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 3rem;
+    }
+
+    h1 {
+      color: #667eea;
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #666;
+      font-size: 1.1rem;
+      margin-bottom: 3rem;
+    }
+
+    .section {
+      margin-bottom: 3rem;
+    }
+
+    .section h2 {
+      color: #764ba2;
+      font-size: 1.8rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 3px solid #667eea;
+    }
+
+    .section h3 {
+      color: #333;
+      font-size: 1.3rem;
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+    }
+
+    .description {
+      color: #555;
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+
+    .test-group {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .test-item {
+      background: white;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      border: 2px solid #e0e0e0;
+      transition: all 0.3s ease;
+    }
+
+    .test-item:hover {
+      border-color: #667eea;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+      transform: translateY(-2px);
+    }
+
+    .test-item h4 {
+      color: #764ba2;
+      font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .test-item p {
+      color: #666;
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 1.5rem;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+    }
+
+    .btn-secondary:hover {
+      box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6);
+    }
+
+    .code {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 1rem;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    .code-inline {
+      background: #f0f0f0;
+      color: #d63384;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9rem;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      background: #667eea;
+      color: white;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-left: 0.5rem;
+    }
+
+    .badge-success {
+      background: #28a745;
+    }
+
+    .badge-info {
+      background: #17a2b8;
+    }
+
+    .badge-warning {
+      background: #ffc107;
+      color: #333;
+    }
+
+    .icon {
+      font-size: 1.5rem;
+    }
+
+    .feature-list {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    .feature-list li {
+      padding: 0.75rem;
+      margin-bottom: 0.5rem;
+      background: white;
+      border-radius: 8px;
+      border-left: 4px solid #28a745;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .feature-list li::before {
+      content: "✅";
+      font-size: 1.2rem;
+    }
+
+    .warning-box {
+      background: #fff3cd;
+      border: 2px solid #ffc107;
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      color: #856404;
+    }
+
+    .warning-box h4 {
+      margin-bottom: 0.5rem;
+      color: #856404;
+    }
+
+    .info-box {
+      background: #d1ecf1;
+      border: 2px solid #17a2b8;
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      color: #0c5460;
+    }
+
+    .info-box h4 {
+      margin-bottom: 0.5rem;
+      color: #0c5460;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 1.5rem;
+      }
+
+      h1 {
+        font-size: 1.8rem;
+      }
+
+      .section h2 {
+        font-size: 1.4rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📄 Teste: Abertura em Página Específica</h1>
+    <p class="subtitle">Teste a funcionalidade de abrir PDFs em páginas específicas usando <span class="code-inline">#page=N</span></p>
+
+    <!-- Funcionalidade -->
+    <div class="section">
+      <h2>🎯 Como Funciona</h2>
+      <div class="description">
+        Agora você pode adicionar <span class="code-inline">#page=N</span> ao final da URL do PDF para abri-lo diretamente em uma página específica.
+        Funciona tanto para URL única quanto para múltiplas URLs!
+      </div>
+
+      <ul class="feature-list">
+        <li>Funciona com URL única e múltiplas URLs</li>
+        <li>Validação automática da página</li>
+        <li>Fallback para página 1 se inválido</li>
+        <li>Case insensitive (#page, #PAGE, #Page)</li>
+        <li>Remove hash antes de carregar o PDF</li>
+      </ul>
+    </div>
+
+    <!-- Sintaxe -->
+    <div class="section">
+      <h2>📋 Sintaxe</h2>
+      
+      <h3>URL Única:</h3>
+      <div class="code">http://localhost:4200/?url=SUA_URL_PDF#page=NUMERO</div>
+
+      <h3>Múltiplas URLs:</h3>
+      <div class="code">http://localhost:4200/?urls=PDF1#page=5,PDF2#page=10,PDF3</div>
+
+      <div class="info-box">
+        <h4>💡 Dica:</h4>
+        <p>Você pode misturar PDFs com e sem páginas específicas na mesma URL!</p>
+      </div>
+    </div>
+
+    <!-- Testes com PDFs Públicos -->
+    <div class="section">
+      <h2>🧪 Testes com PDFs Públicos</h2>
+
+      <div class="test-group">
+        <h3>📄 Teste 1: URL Única - Página Específica</h3>
+        <div class="test-item">
+          <h4>
+            <span class="icon">📄</span>
+            Abrir na Página 5
+            <span class="badge badge-success">Recomendado</span>
+          </h4>
+          <p>Abre um PDF diretamente na página 5.</p>
+          <a href="http://localhost:4200/?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf#page=5" 
+             class="btn" target="_blank">
+            🚀 Testar Página 5
+          </a>
+        </div>
+
+        <div class="test-item">
+          <h4>
+            <span class="icon">📄</span>
+            Abrir na Página 1 (Padrão)
+          </h4>
+          <p>Sem hash - comportamento padrão.</p>
+          <a href="http://localhost:4200/?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" 
+             class="btn btn-secondary" target="_blank">
+            🔍 Testar Página 1
+          </a>
+        </div>
+      </div>
+
+      <div class="test-group">
+        <h3>📚 Teste 2: Múltiplas URLs com Páginas</h3>
+        <div class="test-item">
+          <h4>
+            <span class="icon">📚</span>
+            3 PDFs - Páginas Diferentes
+            <span class="badge badge-info">Popular</span>
+          </h4>
+          <p>Carrega 3 PDFs, cada um em uma página diferente.</p>
+          <a href="http://localhost:4200/?urls=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf#page=2,https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf#page=5,https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" 
+             class="btn" target="_blank">
+            🚀 Testar Múltiplos PDFs
+          </a>
+        </div>
+      </div>
+
+      <div class="test-group">
+        <h3>⚠️ Teste 3: Validação de Páginas</h3>
+        
+        <div class="test-item">
+          <h4>
+            <span class="icon">⚠️</span>
+            Página Inválida (999)
+            <span class="badge badge-warning">Teste de Erro</span>
+          </h4>
+          <p>Tenta abrir na página 999 (não existe). Deve abrir na página 1.</p>
+          <a href="http://localhost:4200/?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf#page=999" 
+             class="btn btn-secondary" target="_blank">
+            🔍 Testar Validação
+          </a>
+        </div>
+
+        <div class="test-item">
+          <h4>
+            <span class="icon">⚠️</span>
+            Página Zero
+            <span class="badge badge-warning">Teste de Erro</span>
+          </h4>
+          <p>Tenta abrir na página 0 (inválida). Deve abrir na página 1.</p>
+          <a href="http://localhost:4200/?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf#page=0" 
+             class="btn btn-secondary" target="_blank">
+            🔍 Testar Página Zero
+          </a>
+        </div>
+
+        <div class="test-item">
+          <h4>
+            <span class="icon">⚠️</span>
+            Hash Inválido
+            <span class="badge badge-warning">Teste de Erro</span>
+          </h4>
+          <p>Hash sem "page=" - deve ignorar e abrir na página 1.</p>
+          <a href="http://localhost:4200/?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf#section=intro" 
+             class="btn btn-secondary" target="_blank">
+            🔍 Testar Hash Inválido
+          </a>
+        </div>
+      </div>
+
+      <div class="test-group">
+        <h3>🔤 Teste 4: Case Insensitive</h3>
+        
+        <div class="test-item">
+          <h4>
+            <span class="icon">🔤</span>
+            Variações de Case
+          </h4>
+          <p>Testa #page, #PAGE e #Page - todos devem funcionar.</p>
+          <a href="http://localhost:4200/?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf#PAGE=3" 
+             class="btn" target="_blank">
+            🚀 Testar #PAGE=3
+          </a>
+          <a href="http://localhost:4200/?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf#Page=3" 
+             class="btn" target="_blank" style="margin-left: 0.5rem;">
+            🚀 Testar #Page=3
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Casos de Uso -->
+    <div class="section">
+      <h2>💡 Casos de Uso Reais</h2>
+
+      <div class="test-group">
+        <h3>📋 Exemplo 1: Contrato - Cláusula Específica</h3>
+        <div class="description">
+          Enviar link direto para uma cláusula importante em um contrato de 50 páginas.
+        </div>
+        <div class="code">http://localhost:4200/?url=https://exemplo.com/contrato.pdf#page=15</div>
+        <p style="color: #28a745; font-weight: 600; margin-top: 0.5rem;">✅ Cliente abre direto na cláusula!</p>
+      </div>
+
+      <div class="test-group">
+        <h3>📊 Exemplo 2: Relatórios Mensais</h3>
+        <div class="description">
+          Revisar seções específicas de vários relatórios mensais.
+        </div>
+        <div class="code">http://localhost:4200/?urls=jan.pdf#page=5,fev.pdf#page=8,mar.pdf#page=3</div>
+        <p style="color: #28a745; font-weight: 600; margin-top: 0.5rem;">✅ Janeiro: Resumo (p.5), Fevereiro: Gráficos (p.8), Março: Análise (p.3)</p>
+      </div>
+
+      <div class="test-group">
+        <h3>📖 Exemplo 3: Documentação Técnica</h3>
+        <div class="description">
+          Link direto para uma seção específica da documentação.
+        </div>
+        <div class="code">http://localhost:4200/?url=https://api.exemplo.com/docs.pdf#page=42</div>
+        <p style="color: #28a745; font-weight: 600; margin-top: 0.5rem;">✅ Abre direto na API Reference!</p>
+      </div>
+
+      <div class="test-group">
+        <h3>🎬 Exemplo 4: Apresentação - Slide Específico</h3>
+        <div class="description">
+          Começar apresentação em um slide específico.
+        </div>
+        <div class="code">http://localhost:4200/?url=https://drive.com/apresentacao.pdf#page=10</div>
+        <p style="color: #28a745; font-weight: 600; margin-top: 0.5rem;">✅ Economiza tempo em reuniões!</p>
+      </div>
+    </div>
+
+    <!-- Como Testar com Seus PDFs -->
+    <div class="section">
+      <h2>🔧 Como Testar com Seus PDFs</h2>
+
+      <div class="warning-box">
+        <h4>⚠️ Importante:</h4>
+        <p>Substitua <span class="code-inline">SUA_URL_PDF</span> pela URL real do seu PDF!</p>
+      </div>
+
+      <h3>Passo 1: Pegue a URL do seu PDF</h3>
+      <div class="code">https://exemplo.com/meu-documento.pdf</div>
+
+      <h3>Passo 2: Adicione o hash com a página</h3>
+      <div class="code">https://exemplo.com/meu-documento.pdf#page=5</div>
+
+      <h3>Passo 3: Monte a URL completa</h3>
+      <div class="code">http://localhost:4200/?url=https://exemplo.com/meu-documento.pdf#page=5</div>
+
+      <h3>Passo 4: Acesse no navegador!</h3>
+      <p style="color: #28a745; font-weight: 600; margin-top: 0.5rem;">✅ Seu PDF abrirá na página 5!</p>
+    </div>
+
+    <!-- Validações -->
+    <div class="section">
+      <h2>✅ O Que Será Validado</h2>
+
+      <ul class="feature-list">
+        <li>Se a página existe (1 ≤ página ≤ totalPages)</li>
+        <li>Se o hash tem formato válido (#page=N)</li>
+        <li>Se o número é válido (inteiro positivo)</li>
+        <li>Fallback para página 1 se inválido</li>
+        <li>Hash é removido antes de carregar o PDF</li>
+      </ul>
+    </div>
+
+    <!-- Console Logs -->
+    <div class="section">
+      <h2>📝 Logs do Console</h2>
+
+      <div class="info-box">
+        <h4>💡 Dica:</h4>
+        <p>Abra o Console do navegador (F12) para ver os logs detalhados!</p>
+      </div>
+
+      <h3>Sucesso (página válida):</h3>
+      <div class="code">[PDF Viewer] Found page number in URL: 5
+[PDF Viewer] Opening PDF at page 5 (from URL hash)
+[PDF Viewer] PDF 1 loaded successfully: 50 pages</div>
+
+      <h3>Página padrão (sem hash):</h3>
+      <div class="code">[PDF Viewer] Loading PDF 1/1: https://exemplo.com/doc.pdf
+[PDF Viewer] PDF 1 loaded successfully: 50 pages</div>
+
+      <h3>Múltiplos PDFs:</h3>
+      <div class="code">[PDF Viewer] Found page number in URL: 3
+[PDF Viewer] Found page number in URL: 10
+[PDF Viewer] Loading first PDF...
+[PDF Viewer] Opening PDF at page 3 (from URL hash)</div>
+    </div>
+
+    <!-- Footer -->
+    <div class="section" style="text-align: center; margin-top: 4rem; padding-top: 2rem; border-top: 2px solid #e0e0e0;">
+      <h3 style="color: #667eea; margin-bottom: 1rem;">✅ Funcionalidade Implementada!</h3>
+      <p style="color: #666; font-size: 1.1rem;">
+        Agora você pode compartilhar links precisos para páginas específicas de PDFs! 🎯
+      </p>
+      <p style="color: #999; margin-top: 1rem;">
+        Implementado em: 30/09/2025
+      </p>
+    </div>
+  </div>
+</body>
+</html>
