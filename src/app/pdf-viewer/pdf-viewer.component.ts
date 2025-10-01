@@ -19,6 +19,7 @@ interface PdfDocument {
   error?: string;
   file?: File; // Armazena o arquivo quando é upload
   initialPage?: number; // Página inicial a ser aberta (do hash #page=N)
+  hasBeenViewed?: boolean; // Flag para saber se já foi visualizado (para auto-fit)
 }
 
 @Component({
@@ -225,7 +226,8 @@ export class PdfViewerComponent implements OnInit {
           totalPages: pdfDoc.numPages,
           isLoaded: true,
           isLoading: false,
-          error: undefined
+          error: undefined,
+          hasBeenViewed: this.activeDocumentIndex() === index // Marca como visto se é o ativo
         };
         return newDocs;
       });
@@ -244,7 +246,8 @@ export class PdfViewerComponent implements OnInit {
         }
         
         this.currentPage.set(startPage);
-        await this.renderPage(startPage);
+        // Aplica auto-fit na primeira renderização
+        await this.renderPage(startPage, true);
       }
 
       console.log(`[PDF Viewer] PDF ${index + 1} loaded successfully:`, pdfDoc.numPages, 'pages');
@@ -351,8 +354,21 @@ export class PdfViewerComponent implements OnInit {
         : 1;
       
       this.currentPage.set(startPage);
+      
+      // Aplica auto-fit apenas na PRIMEIRA visualização do documento
+      const shouldAutoFit = !doc.hasBeenViewed;
+      
+      if (shouldAutoFit) {
+        // Marca como visualizado
+        this.pdfDocuments.update(docs => {
+          const newDocs = [...docs];
+          newDocs[index] = { ...newDocs[index], hasBeenViewed: true };
+          return newDocs;
+        });
+      }
+      
       // scale mantém o valor atual (persistente entre documentos)
-      this.renderPage(startPage);
+      this.renderPage(startPage, shouldAutoFit);
     } else if (doc && !doc.isLoading) {
       // Carrega o documento se ainda não foi carregado
       this.loadPdfDocument(index);
@@ -599,7 +615,8 @@ export class PdfViewerComponent implements OnInit {
       this.currentPage.set(1);
       this.pdfLoaded.set(true);
       this.showInstructionsTemporarily(); // Mostra instruções por 3s
-      await this.renderPage(1);
+      // Aplica auto-fit na primeira renderização
+      await this.renderPage(1, true);
       
       console.log('[PDF Viewer] PDF uploaded successfully:', doc.totalPages, 'pages');
     } catch (error) {
@@ -607,12 +624,18 @@ export class PdfViewerComponent implements OnInit {
     }
   }
 
-  async renderPage(pageNumber: number) {
+  async renderPage(pageNumber: number, applyAutoFit: boolean = false) {
     const doc = this.activeDocument();
     if (!doc || !doc.doc) return;
 
     try {
       const page = await doc.doc.getPage(pageNumber);
+      
+      // Aplica zoom adaptativo se solicitado (primeira renderização)
+      if (applyAutoFit) {
+        await this.calculateFitToWidthScale(page);
+      }
+      
       const viewport = page.getViewport({ scale: this.scale() });
 
       const canvas = document.createElement('canvas');
@@ -638,6 +661,39 @@ export class PdfViewerComponent implements OnInit {
     } catch (error) {
       console.error('Erro ao renderizar página:', error);
       this.errorMessage.set('Erro ao renderizar a página');
+    }
+  }
+
+  private async calculateFitToWidthScale(page: any): Promise<void> {
+    try {
+      // 1. Pega dimensões originais da página (scale=1)
+      const originalViewport = page.getViewport({ scale: 1.0 });
+      
+      // 2. Calcula largura disponível (container - padding)
+      const containerWidth = this.pdfContainer.nativeElement.offsetWidth;
+      const paddingTotal = 64; // 32px cada lado (2rem * 2)
+      const availableWidth = containerWidth - paddingTotal;
+      
+      // 3. Calcula scale ideal para caber perfeitamente
+      const fitScale = availableWidth / originalViewport.width;
+      
+      // 4. Aplica scale (limitado entre 0.5 e 3.0)
+      const finalScale = Math.max(0.5, Math.min(fitScale, 3.0));
+      
+      // 5. Atualiza o scale global
+      this.scale.set(finalScale);
+      
+      console.log('[PDF Viewer] Auto-fit scale calculated:', {
+        containerWidth,
+        availableWidth,
+        pdfWidth: originalViewport.width,
+        calculatedScale: fitScale,
+        finalScale: finalScale,
+        percentage: Math.round(finalScale * 100) + '%'
+      });
+    } catch (error) {
+      console.error('[PDF Viewer] Error calculating fit-to-width scale:', error);
+      // Em caso de erro, mantém scale atual
     }
   }
 
@@ -748,9 +804,9 @@ export class PdfViewerComponent implements OnInit {
       return;
     }
     
-    // 2️⃣ Define threshold baseado na largura da tela (30% mínimo)
-    const swipeThreshold = screenWidth * 0.2;
-    
+    // 2️⃣ Define threshold baseado na largura da tela (12% mínimo)
+    const swipeThreshold = screenWidth * 0.12;
+
     // 3️⃣ Verifica se o movimento foi suficiente
     if (horizontalDistance < swipeThreshold) {
       console.log('[PDF Viewer] Swipe ignored: distance too short');
