@@ -57,13 +57,16 @@ export class PdfViewerComponent implements OnInit {
   isDragging = signal(false);
   pdfLoaded = signal(false);
   showInstructions = signal(false);
-  pageTransitionDirection = signal<'forward' | 'backward'>('forward');
+  pageTransitionDirection = signal<'forward' | 'backward' | 'none'>('none');
+  
+  // Swipe avançado com feedback visual
+  swipeOffset = signal(0); // Offset atual do arrasto (px)
+  isSwipingActive = signal(false); // Se está arrastando ativamente
 
   private touchStartX = 0;
-  private instructionsTimeout?: number;
-  private touchEndX = 0;
   private touchStartY = 0;
-  private touchEndY = 0;
+  private touchStartTime = 0; // Tempo do início do toque
+  private instructionsTimeout?: number;
   private pdfjsLib: any;
   private pdfjsReady: Promise<void>;
   private lastLoadedUrl: string = '';
@@ -659,7 +662,7 @@ export class PdfViewerComponent implements OnInit {
 
       await page.render(renderContext).promise;
 
-      // Limpa o container e adiciona o novo canvas
+      // Simplesmente substitui o canvas (sem animações)
       const container = this.pdfContainer.nativeElement;
       container.innerHTML = '';
       container.appendChild(canvas);
@@ -734,14 +737,12 @@ export class PdfViewerComponent implements OnInit {
   // Navegação
   previousPage() {
     if (this.currentPage() > 1) {
-      this.pageTransitionDirection.set('backward');
       this.renderPage(this.currentPage() - 1);
     }
   }
 
   nextPage() {
     if (this.currentPage() < this.totalPages()) {
-      this.pageTransitionDirection.set('forward');
       this.renderPage(this.currentPage() + 1);
     }
   }
@@ -805,56 +806,124 @@ export class PdfViewerComponent implements OnInit {
     }
   }
 
-  // Touch/Swipe gestures - Virar página como livro
+  // Touch/Swipe gestures - Sistema avançado com feedback visual
   onTouchStart(event: TouchEvent) {
     const touch = event.changedTouches[0];
-    this.touchStartX = touch.screenX;
-    this.touchStartY = touch.screenY;
+    this.touchStartX = touch.clientX;
+    this.touchStartY = touch.clientY;
+    this.touchStartTime = Date.now();
+    this.isSwipingActive.set(true);
+    this.swipeOffset.set(0);
+  }
+
+  onTouchMove(event: TouchEvent) {
+    if (!this.isSwipingActive()) return;
+    
+    const touch = event.changedTouches[0];
+    const currentX = touch.clientX;
+    const currentY = touch.clientY;
+    
+    const deltaX = currentX - this.touchStartX;
+    const deltaY = currentY - this.touchStartY;
+    
+    // Verifica se o movimento é predominantemente horizontal
+    if (Math.abs(deltaY) > Math.abs(deltaX) * 0.5) {
+      // Movimento vertical, cancela swipe
+      return;
+    }
+    
+    // Aplica resistência se tentar ir além dos limites
+    let offset = deltaX;
+    
+    // Se está na primeira página e tenta voltar
+    if (this.currentPage() === 1 && deltaX > 0) {
+      offset = deltaX * 0.3; // 30% de resistência
+    }
+    
+    // Se está na última página e tenta avançar
+    if (this.currentPage() === this.totalPages() && deltaX < 0) {
+      offset = deltaX * 0.3; // 30% de resistência
+    }
+    
+    this.swipeOffset.set(offset);
+    
+    // Previne scroll enquanto arrasta
+    if (Math.abs(deltaX) > 10) {
+      event.preventDefault();
+    }
   }
 
   onTouchEnd(event: TouchEvent) {
+    if (!this.isSwipingActive()) return;
+    
     const touch = event.changedTouches[0];
-    this.touchEndX = touch.screenX;
-    this.touchEndY = touch.screenY;
-    this.handleSwipe();
+    const touchEndX = touch.clientX;
+    const touchEndY = touch.clientY;
+    const touchEndTime = Date.now();
+    
+    // Calcula métricas do swipe
+    const horizontalDistance = Math.abs(touchEndX - this.touchStartX);
+    const verticalDistance = Math.abs(touchEndY - this.touchStartY);
+    const duration = touchEndTime - this.touchStartTime; // ms
+    const velocity = horizontalDistance / duration; // px/ms
+    
+    // Verifica se o movimento é predominantemente horizontal
+    if (verticalDistance > horizontalDistance * 0.5) {
+      this.cancelSwipe();
+      return;
+    }
+    
+    // Calcula direção
+    const swipeDirection = this.touchStartX - touchEndX;
+    const isGoingForward = swipeDirection > 0;
+    
+    // Define se deve mudar de página baseado em:
+    // 1. Velocidade alta (> 0.5 px/ms) = swipe rápido
+    // 2. OU distância > 50% da tela = swipe longo
+    const screenWidth = window.innerWidth;
+    const isSwipeFast = velocity > 0.5; // Swipe rápido
+    const isSwipeLong = horizontalDistance > screenWidth * 0.5; // Mais de 50% da tela
+    
+    const shouldChangePage = isSwipeFast || isSwipeLong;
+    
+    console.log('[PDF Viewer] Swipe metrics:', {
+      distance: Math.round(horizontalDistance),
+      duration: duration + 'ms',
+      velocity: velocity.toFixed(3) + ' px/ms',
+      isFast: isSwipeFast,
+      isLong: isSwipeLong,
+      shouldChange: shouldChangePage
+    });
+    
+    if (shouldChangePage) {
+      // Completa o swipe - muda de página
+      if (isGoingForward && this.currentPage() < this.totalPages()) {
+        this.nextPage();
+      } else if (!isGoingForward && this.currentPage() > 1) {
+        this.previousPage();
+      } else {
+        this.cancelSwipe();
+      }
+    } else {
+      // Cancela o swipe - volta à posição original
+      this.cancelSwipe();
+    }
+    
+    // Reseta estado após animação
+    setTimeout(() => {
+      this.isSwipingActive.set(false);
+      this.swipeOffset.set(0);
+    }, 300);
+  }
+
+  private cancelSwipe() {
+    console.log('[PDF Viewer] Swipe cancelled - returning to original position');
+    // Anima de volta para posição original
+    this.swipeOffset.set(0);
   }
 
   handleSwipe() {
-    const screenWidth = window.innerWidth;
-    
-    // Distâncias do movimento
-    const horizontalDistance = Math.abs(this.touchEndX - this.touchStartX);
-    const verticalDistance = Math.abs(this.touchEndY - this.touchStartY);
-    
-    // 1️⃣ Verifica se o movimento é predominantemente horizontal
-    if (verticalDistance > horizontalDistance * 0.5) {
-      // Se muito movimento vertical, ignora (pode ser scroll)
-      console.log('[PDF Viewer] Swipe ignored: too much vertical movement');
-      return;
-    }
-    
-    // 2️⃣ Define threshold baseado na largura da tela (12% mínimo)
-    const swipeThreshold = screenWidth * 0.12;
-
-    // 3️⃣ Verifica se o movimento foi suficiente
-    if (horizontalDistance < swipeThreshold) {
-      console.log('[PDF Viewer] Swipe ignored: distance too short');
-      return;
-    }
-    
-    // 4️⃣ Calcula a direção do swipe
-    const swipeDirection = this.touchStartX - this.touchEndX;
-    
-    // 5️⃣ Executa a navegação baseada na direção
-    if (swipeDirection > 0) {
-      // Swipe da direita para esquerda (como virar página para frente)
-      console.log('[PDF Viewer] Swipe: Next page (right to left)');
-      this.nextPage();
-    } else {
-      // Swipe da esquerda para direita (como virar página para trás)
-      console.log('[PDF Viewer] Swipe: Previous page (left to right)');
-      this.previousPage();
-    }
+    // Método antigo - mantido para compatibilidade mas não mais usado
   }
 
   // Navegação por teclado

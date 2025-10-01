@@ -606,10 +606,15 @@
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  overflow: auto;
+  overflow: hidden; // Mudado de auto para hidden para o efeito de swipe
   background: #e0e0e0;
   width: 100%;
-  box-sizing: border-box; // Inclui padding no cálculo de width
+  box-sizing: border-box;
+  position: relative;
+  touch-action: pan-y; // Permite scroll vertical, previne zoom pinch
+  
+  // Variável CSS para o offset do swipe
+  --swipe-offset: 0;
 
   @media (max-width: 768px) {
     padding: 1rem;
@@ -624,55 +629,101 @@
     max-width: 100%;
     height: auto;
     background: white;
-    display: block; // Remove espaço extra abaixo do canvas
+    display: block;
+    margin: 0 auto; // Centraliza horizontalmente
+    will-change: transform; // Otimização GPU
+    
+    // Animações de ENTRADA (nova página aparecendo POR CIMA)
+    &.page-enter-from-right {
+      animation: pageSlideInFromRight 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    
+    &.page-enter-from-left {
+      animation: pageSlideInFromLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
   }
   
-  // Animação para frente (próxima página) - MAIS LONGA E VISÍVEL
+  // Quando está arrastando ativamente (segue o dedo)
+  &.swiping {
+    canvas {
+      transform: translateX(var(--swipe-offset));
+      transition: none; // Resposta imediata ao toque
+    }
+  }
+  
+  // Quando solta o dedo e vai completar a transição
+  &.page-forward,
+  &.page-backward {
+    canvas {
+      // Animação de saída da página atual
+      animation: pageSlideOut 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+  }
+  
+  // Página saindo para a esquerda (próxima página)
   &.page-forward canvas {
-    animation: pageTransitionForward 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: pageSlideOutLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
   
-  // Animação para trás (página anterior) - MAIS LONGA E VISÍVEL
+  // Página saindo para a direita (página anterior)
   &.page-backward canvas {
-    animation: pageTransitionBackward 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: pageSlideOutRight 0.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+  
+  // Quando cancela o swipe (volta à posição original)
+  &:not(.swiping):not(.page-forward):not(.page-backward) {
+    canvas {
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
   }
 }
 
-// Animação de virar página para FRENTE (direita → esquerda) - MAIS VISÍVEL
-@keyframes pageTransitionForward {
+// Animação: Página atual sai para a ESQUERDA (avançar)
+@keyframes pageSlideOutLeft {
   0% {
-    opacity: 0.3;
-    transform: translateX(80px) scale(0.85) rotateY(-15deg);
-    filter: brightness(0.7);
-  }
-  50% {
-    opacity: 0.6;
-    transform: translateX(40px) scale(0.92) rotateY(-7deg);
-    filter: brightness(0.85);
+    transform: translateX(0);
+    opacity: 1;
   }
   100% {
-    opacity: 1;
-    transform: translateX(0) scale(1) rotateY(0deg);
-    filter: brightness(1);
+    transform: translateX(-100vw);
+    opacity: 0.3;
   }
 }
 
-// Animação de virar página para TRÁS (esquerda → direita) - MAIS VISÍVEL
-@keyframes pageTransitionBackward {
+// Animação: Página atual sai para a DIREITA (voltar)
+@keyframes pageSlideOutRight {
   0% {
-    opacity: 0.3;
-    transform: translateX(-80px) scale(0.85) rotateY(15deg);
-    filter: brightness(0.7);
-  }
-  50% {
-    opacity: 0.6;
-    transform: translateX(-40px) scale(0.92) rotateY(7deg);
-    filter: brightness(0.85);
+    transform: translateX(0);
+    opacity: 1;
   }
   100% {
+    transform: translateX(100vw);
+    opacity: 0.3;
+  }
+}
+
+// Animação: Nova página entra pela DIREITA (avançar)
+// Animação: Nova página entra pela DIREITA (avançar)
+@keyframes pageSlideInFromRight {
+  0% {
+    transform: translate(-50%, -50%) translateX(100vw);
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate(-50%, -50%) translateX(0);
     opacity: 1;
-    transform: translateX(0) scale(1) rotateY(0deg);
-    filter: brightness(1);
+  }
+}
+
+// Animação: Nova página entra pela ESQUERDA (voltar)
+@keyframes pageSlideInFromLeft {
+  0% {
+    transform: translate(-50%, -50%) translateX(-100vw);
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate(-50%, -50%) translateX(0);
+    opacity: 1;
   }
 }
 

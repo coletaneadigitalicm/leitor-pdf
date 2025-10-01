@@ -162,8 +162,11 @@
       class="pdf-canvas-container"
       [class.page-forward]="pageTransitionDirection() === 'forward'"
       [class.page-backward]="pageTransitionDirection() === 'backward'"
+      [class.swiping]="isSwipingActive()"
+      [style.--swipe-offset.px]="swipeOffset()"
       #pdfContainer
       (touchstart)="onTouchStart($event)"
+      (touchmove)="onTouchMove($event)"
       (touchend)="onTouchEnd($event)">
     </div>
   </div>
