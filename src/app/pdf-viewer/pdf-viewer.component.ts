@@ -43,6 +43,14 @@ export class PdfViewerComponent implements OnInit {
   currentPage = signal(1);
   totalPages = signal(0);
   scale = signal(1.0);
+  autoFitScale = signal<number | null>(null); // Armazena o scale calculado do autofit
+  isAutoFitDifferent = computed(() => {
+    const autoFit = this.autoFitScale();
+    const current = this.scale();
+    if (autoFit === null) return false;
+    // Considera diferente se a diferença for maior que 0.01
+    return Math.abs(current - autoFit) > 0.01;
+  });
   pdfUrl = signal('');
   isLoading = signal(false);
   errorMessage = signal('');
@@ -680,7 +688,10 @@ export class PdfViewerComponent implements OnInit {
       // 4. Aplica scale (limitado entre 0.5 e 3.0)
       const finalScale = Math.max(0.5, Math.min(fitScale, 3.0));
       
-      // 5. Atualiza o scale global
+      // 5. Salva o autofit scale para referência futura
+      this.autoFitScale.set(finalScale);
+      
+      // 6. Atualiza o scale global
       this.scale.set(finalScale);
       
       console.log('[PDF Viewer] Auto-fit scale calculated:', {
@@ -774,6 +785,24 @@ export class PdfViewerComponent implements OnInit {
   resetZoom() {
     this.scale.set(1.0);
     this.renderPage(this.currentPage());
+  }
+
+  // Fit to Width - Aplica o autofit calculado
+  async fitToWidth() {
+    const doc = this.activeDocument();
+    if (!doc || !doc.doc) return;
+
+    try {
+      // Pega a página atual para recalcular o autofit
+      const page = await doc.doc.getPage(this.currentPage());
+      await this.calculateFitToWidthScale(page);
+      // Renderiza com o novo scale (autofit já foi aplicado em calculateFitToWidthScale)
+      await this.renderPage(this.currentPage());
+      
+      console.log('[PDF Viewer] Fit to width applied:', Math.round(this.scale() * 100) + '%');
+    } catch (error) {
+      console.error('[PDF Viewer] Error applying fit to width:', error);
+    }
   }
 
   // Touch/Swipe gestures - Virar página como livro

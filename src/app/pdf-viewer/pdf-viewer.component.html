@@ -94,6 +94,17 @@
       </div>
 
       <div class="toolbar-right">
+        <!-- Botão Fit to Width (só aparece quando zoom é diferente do autofit) -->
+        <button 
+          *ngIf="isAutoFitDifferent()"
+          class="btn btn-icon" 
+          (click)="fitToWidth()" 
+          title="Ajustar à largura (Fit to Width)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+        </button>
+        
         <button class="btn btn-icon" (click)="zoomOut()" [disabled]="scale() <= 0.5" title="Diminuir zoom">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="11" cy="11" r="8"></circle>
