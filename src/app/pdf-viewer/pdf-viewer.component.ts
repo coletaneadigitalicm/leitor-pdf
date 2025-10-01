@@ -205,13 +205,16 @@ export class PdfViewerComponent implements OnInit {
     if (index === this.activeDocumentIndex()) return;
 
     console.log(`[PDF Viewer] Switching to document ${index + 1}`);
+    
+    // Troca para o novo documento
     this.activeDocumentIndex.set(index);
 
     const doc = this.activeDocument();
     if (doc && doc.isLoaded) {
+      // Restaura com o zoom atual (persistente) e volta para página 1
       this.totalPages.set(doc.totalPages);
       this.currentPage.set(1);
-      this.scale.set(1.0);
+      // scale mantém o valor atual (persistente entre documentos)
       this.renderPage(1);
     } else if (doc && !doc.isLoading) {
       // Carrega o documento se ainda não foi carregado
@@ -474,7 +477,7 @@ export class PdfViewerComponent implements OnInit {
     }
   }
 
-  // Zoom
+  // Zoom - mantém o valor entre documentos
   zoomIn() {
     this.scale.update(s => Math.min(s + 0.25, 3.0));
     this.renderPage(this.currentPage());
