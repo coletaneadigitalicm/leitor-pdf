@@ -46,8 +46,10 @@ export class PdfViewerComponent implements OnInit {
   errorMessage = signal('');
   isDragging = signal(false);
   pdfLoaded = signal(false);
+  showInstructions = signal(false);
 
   private touchStartX = 0;
+  private instructionsTimeout?: number;
   private touchEndX = 0;
   private pdfjsLib: any;
 
@@ -96,6 +98,7 @@ export class PdfViewerComponent implements OnInit {
 
     this.pdfDocuments.set(docs);
     this.pdfLoaded.set(true);
+    this.showInstructionsTemporarily(); // Mostra instruções por 3s
 
     // Carrega o primeiro PDF imediatamente
     console.log('[PDF Viewer] Loading first PDF...');
@@ -222,6 +225,22 @@ export class PdfViewerComponent implements OnInit {
     }
   }
 
+  // Mostra instruções temporariamente
+  private showInstructionsTemporarily() {
+    // Limpa timeout anterior se existir
+    if (this.instructionsTimeout) {
+      clearTimeout(this.instructionsTimeout);
+    }
+
+    // Mostra as instruções
+    this.showInstructions.set(true);
+
+    // Esconde após 3 segundos
+    this.instructionsTimeout = window.setTimeout(() => {
+      this.showInstructions.set(false);
+    }, 3000);
+  }
+
   async loadPdfJs() {
     try {
       // Carrega a biblioteca PDF.js dinamicamente
@@ -301,6 +320,7 @@ export class PdfViewerComponent implements OnInit {
 
       this.pdfDocuments.set(docs);
       this.pdfLoaded.set(true);
+      this.showInstructionsTemporarily(); // Mostra instruções por 3s
 
       // Carrega o primeiro PDF imediatamente
       console.log('[PDF Viewer] Loading first uploaded PDF...');
@@ -423,6 +443,7 @@ export class PdfViewerComponent implements OnInit {
       this.totalPages.set(doc.totalPages);
       this.currentPage.set(1);
       this.pdfLoaded.set(true);
+      this.showInstructionsTemporarily(); // Mostra instruções por 3s
       await this.renderPage(1);
       
       console.log('[PDF Viewer] PDF uploaded successfully:', doc.totalPages, 'pages');

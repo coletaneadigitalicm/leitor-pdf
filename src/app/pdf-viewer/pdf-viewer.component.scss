@@ -567,14 +567,32 @@
   bottom: 2rem;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.85);
   color: white;
   padding: 0.75rem 1.5rem;
   border-radius: 24px;
   font-size: 0.9rem;
   z-index: 100;
-  animation: fadeIn 0.5s ease;
   pointer-events: none;
+  
+  // Borda com animação estilo circuito
+  border: 2px solid transparent;
+  background-image: 
+    linear-gradient(rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0.85)),
+    linear-gradient(90deg, 
+      #00ff88 0%, 
+      #00d4ff 25%, 
+      #0088ff 50%, 
+      #00d4ff 75%, 
+      #00ff88 100%
+    );
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  
+  // Animação de entrada e saída
+  animation: 
+    circuitBorder 2s linear infinite,
+    instructionsFadeInOut 3s ease-in-out forwards;
 
   @media (max-width: 768px) {
     font-size: 0.8rem;
@@ -584,6 +602,37 @@
 
   p {
     margin: 0;
+    text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+  }
+}
+
+// Animação da borda estilo circuito
+@keyframes circuitBorder {
+  0% {
+    background-position: 0% 0%, 0% 0%;
+  }
+  100% {
+    background-position: 0% 0%, 200% 0%;
+  }
+}
+
+// Animação de fade in e fade out
+@keyframes instructionsFadeInOut {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(10px);
+  }
+  10% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  85% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px);
   }
 }
 
