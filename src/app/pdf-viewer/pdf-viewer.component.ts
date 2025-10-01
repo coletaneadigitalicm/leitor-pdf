@@ -191,8 +191,30 @@ export class PdfViewerComponent implements OnInit {
 
     try {
       console.log(`[PDF Viewer] Loading PDF ${index + 1}/${docs.length}:`, doc.url);
-      const loadingTask = this.pdfjsLib.getDocument(doc.url);
+      console.log('[PDF Viewer] Using progressive loading (Range Requests)');
+      
+      // Configuração para carregamento progressivo (Range Requests)
+      // Isso permite baixar apenas as páginas necessárias em vez do PDF inteiro
+      const loadingTask = this.pdfjsLib.getDocument({
+        url: doc.url,
+        // Habilita carregamento progressivo via HTTP Range Requests
+        disableRange: false,        // Permite range requests (padrão: false)
+        disableStream: false,       // Permite streaming (padrão: false)
+        disableAutoFetch: true,     // Desabilita pre-fetch de todas as páginas
+        // Tamanho do chunk para download (512 KB por vez)
+        rangeChunkSize: 524288,     // 512 KB (padrão: 65536 = 64 KB)
+      });
+      
+      // Monitora progresso do download
+      loadingTask.onProgress = (progressData: any) => {
+        if (progressData.total > 0) {
+          const percent = Math.round((progressData.loaded / progressData.total) * 100);
+          console.log(`[PDF Viewer] Download progress: ${percent}% (${progressData.loaded}/${progressData.total} bytes)`);
+        }
+      };
+      
       const pdfDoc = await loadingTask.promise;
+      console.log('[PDF Viewer] PDF metadata loaded, pages will be fetched on demand');
 
       // Atualiza o estado de forma imutável após carregar
       this.pdfDocuments.update(currentDocs => {
@@ -479,7 +501,16 @@ export class PdfViewerComponent implements OnInit {
       console.log(`[PDF Viewer] Loading PDF ${index + 1}/${docs.length}: ${file.name}`);
       
       const arrayBuffer = await file.arrayBuffer();
-      const loadingTask = this.pdfjsLib.getDocument({ data: arrayBuffer });
+      
+      // Para arquivos locais, também podemos otimizar o carregamento
+      const loadingTask = this.pdfjsLib.getDocument({
+        data: arrayBuffer,
+        // Desabilita pre-fetch de todas as páginas
+        disableAutoFetch: true,     // Carrega páginas sob demanda
+        disableStream: false,       // Mantém streaming habilitado
+        disableRange: false,        // Permite range requests se possível
+      });
+      
       const pdfDoc = await loadingTask.promise;
 
       // Atualiza o documento de forma imutável
