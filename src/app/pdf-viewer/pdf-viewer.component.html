@@ -1,0 +1,168 @@
+<div class="pdf-viewer-container" (keydown)="onKeyDown($event)" tabindex="0">
+  <!-- Upload Section -->
+  <div class="upload-section" *ngIf="!pdfLoaded()">
+    <div class="upload-controls">
+      <h1>Leitor de PDF</h1>
+      
+      <!-- URL Input -->
+      <div class="url-input-group">
+        <input 
+          type="text" 
+          [(ngModel)]="pdfUrl"
+          placeholder="Digite a URL do PDF"
+          class="url-input"
+          (keyup.enter)="loadPdfFromUrl()">
+        <button class="btn btn-primary" (click)="loadPdfFromUrl()">
+          Carregar da URL
+        </button>
+      </div>
+
+      <div class="separator">
+        <span>OU</span>
+      </div>
+
+      <!-- Drag and Drop Area -->
+      <div 
+        class="drop-zone"
+        [class.dragging]="isDragging()"
+        (dragover)="onDragOver($event)"
+        (dragleave)="onDragLeave($event)"
+        (drop)="onDrop($event)"
+        (click)="triggerFileInput()">
+        <input 
+          #fileInput
+          type="file" 
+          accept="application/pdf"
+          multiple
+          (change)="onFileSelected($event)"
+          style="display: none;">
+        
+        <div class="drop-zone-content">
+          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <p class="drop-zone-text">
+            <span *ngIf="!isDragging()">Arraste um ou mais arquivos PDF aqui ou clique para selecionar</span>
+            <span *ngIf="isDragging()">Solte os arquivos aqui</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF Viewer -->
+  <div class="pdf-content" *ngIf="pdfLoaded()">
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <button class="btn btn-icon" (click)="pdfLoaded.set(false); pdfDocuments.set([])" title="Carregar outro PDF">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="toolbar-center">
+        <button class="btn btn-icon" (click)="previousPage()" [disabled]="currentPage() === 1" title="Página anterior">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        
+        <span class="page-info">
+          {{ currentPage() }} / {{ totalPages() }}
+        </span>
+        
+        <button class="btn btn-icon" (click)="nextPage()" [disabled]="currentPage() === totalPages()" title="Próxima página">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+
+      <div class="toolbar-right">
+        <button class="btn btn-icon" (click)="zoomOut()" [disabled]="scale() <= 0.5" title="Diminuir zoom">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="8" y1="11" x2="14" y2="11"></line>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+        
+        <span class="zoom-level" (click)="resetZoom()" title="Clique para resetar zoom">
+          {{ (scale() * 100) | number:'1.0-0' }}%
+        </span>
+        
+        <button class="btn btn-icon" (click)="zoomIn()" [disabled]="scale() >= 3.0" title="Aumentar zoom">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="11" y1="8" x2="11" y2="14"></line>
+            <line x1="8" y1="11" x2="14" y2="11"></line>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Document Tabs Carousel (only show if multiple documents) -->
+    <div class="document-tabs" *ngIf="hasMultipleDocs()">
+      <div class="tabs-container">
+        <div class="tabs-scroll">
+          @for (doc of pdfDocuments(); track doc.id; let i = $index) {
+            <button 
+              class="tab-chip"
+              [class.active]="activeDocumentIndex() === i"
+              [class.loading]="doc.isLoading"
+              [class.error]="doc.error"
+              (click)="switchToDocument(i)"
+              [title]="doc.name">
+              <span class="tab-number">{{ i + 1 }}</span>
+              <span class="tab-name">{{ doc.name }}</span>
+              @if (doc.isLoading) {
+                <span class="tab-status loading-spinner"></span>
+              }
+              @if (doc.error) {
+                <span class="tab-status error-icon">⚠️</span>
+              }
+              @if (doc.isLoaded && !doc.error) {
+                <span class="tab-pages">{{ doc.totalPages }}p</span>
+              }
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- PDF Canvas Container -->
+    <div 
+      class="pdf-canvas-container"
+      #pdfContainer
+      (touchstart)="onTouchStart($event)"
+      (touchend)="onTouchEnd($event)">
+    </div>
+  </div>
+
+  <!-- Loading Indicator -->
+  <div class="loading-overlay" *ngIf="isLoading()">
+    <div class="spinner"></div>
+    <p>Carregando PDF...</p>
+  </div>
+
+  <!-- Error Message -->
+  <div class="error-message" *ngIf="errorMessage()">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    {{ errorMessage() }}
+  </div>
+
+  <!-- Instructions Overlay -->
+  <div class="instructions" *ngIf="pdfLoaded()">
+    <p>Use as setas do teclado ou gestos de swipe para navegar</p>
+  </div>
+</div>

@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste - Múltiplos PDFs</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+
+        .emoji {
+            font-size: 2rem;
+            margin-right: 0.5rem;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 2rem;
+        }
+
+        .section {
+            margin-bottom: 2rem;
+        }
+
+        .section h2 {
+            color: #667eea;
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .btn {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-success {
+            background: #28a745;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .generator {
+            background: #f8f9ff;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .generator label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .url-input-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .url-input-group input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+
+        .url-input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .url-input-group button {
+            padding: 0.75rem 1rem;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .url-input-group button:hover {
+            background: #c82333;
+        }
+
+        .add-url-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .add-url-btn:hover {
+            background: #218838;
+        }
+
+        .result {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            border: 2px solid #667eea;
+            margin-top: 1rem;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+            font-weight: 600;
+        }
+
+        .copy-btn:hover {
+            background: #218838;
+        }
+
+        .feature-box {
+            background: #f8f9ff;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border-left: 4px solid #667eea;
+        }
+
+        .feature-box h3 {
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature-box ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .feature-box li {
+            padding: 0.25rem 0;
+            color: #555;
+        }
+
+        .feature-box li:before {
+            content: "✓ ";
+            color: #28a745;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+
+        .preview {
+            background: #282c34;
+            color: #abb2bf;
+            padding: 1rem;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            overflow-x: auto;
+            margin-top: 0.5rem;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 1rem;
+            }
+
+            .container {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .url-input-group {
+                flex-direction: column;
+            }
+
+            .url-input-group input {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><span class="emoji">📚</span>Teste de Múltiplos PDFs</h1>
+        <p class="subtitle">Visualize vários PDFs com carrossel de abas!</p>
+
+        <div class="section">
+            <h2><span class="emoji">🚀</span>Testes Rápidos</h2>
+            
+            <a href="http://localhost:4200/?urls=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf,https://www.africau.edu/images/default/sample.pdf" 
+               target="_blank" class="btn">
+                📄 Testar 2 PDFs
+            </a>
+
+            <a href="http://localhost:4200/?url=https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" 
+               target="_blank" class="btn">
+                📄 Testar 1 PDF
+            </a>
+
+            <a href="http://localhost:4200/" 
+               target="_blank" class="btn">
+                🏠 Página Inicial
+            </a>
+        </div>
+
+        <div class="section">
+            <h2><span class="emoji">✨</span>O que você vai ver</h2>
+            
+            <div class="feature-box">
+                <h3>Carrossel de Abas</h3>
+                <ul>
+                    <li>Scroll horizontal suave</li>
+                    <li>Indicador de aba ativa (gradiente roxo)</li>
+                    <li>Número do documento em cada aba</li>
+                    <li>Nome extraído automaticamente da URL</li>
+                    <li>Contador de páginas após carregar</li>
+                    <li>Spinner de carregamento animado</li>
+                </ul>
+            </div>
+
+            <div class="feature-box">
+                <h3>Carregamento Inteligente</h3>
+                <ul>
+                    <li>Primeiro PDF carrega imediatamente</li>
+                    <li>Outros PDFs carregam em paralelo</li>
+                    <li>Troca instantânea entre PDFs já carregados</li>
+                    <li>Indicador visual de progresso</li>
+                </ul>
+            </div>
+
+            <div class="feature-box">
+                <h3>100% Responsivo</h3>
+                <ul>
+                    <li>Desktop: Abas largas (140-280px)</li>
+                    <li>Tablet: Abas médias (120-200px)</li>
+                    <li>Mobile: Abas compactas (110-160px)</li>
+                    <li>Touch-friendly em todos os dispositivos</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2><span class="emoji">🛠️</span>Gerador de Links</h2>
+            
+            <div class="generator">
+                <label>Adicione as URLs dos seus PDFs:</label>
+                
+                <div id="urlInputs"></div>
+                
+                <button class="add-url-btn" onclick="addUrlInput()">➕ Adicionar URL</button>
+                
+                <div id="result" style="display: none;">
+                    <label>Link Gerado:</label>
+                    <div class="result" id="generatedLink"></div>
+                    <button class="copy-btn" onclick="copyLink()">📋 Copiar Link</button>
+                    <a id="openLink" href="#" target="_blank" class="btn btn-success" style="margin-left: 0.5rem;">🚀 Abrir</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2><span class="emoji">💡</span>Exemplos de Uso</h2>
+            
+            <h3>Com Vírgula:</h3>
+            <div class="preview">?urls=URL1,URL2,URL3</div>
+
+            <h3 style="margin-top: 1rem;">Com Pipe:</h3>
+            <div class="preview">?urls=URL1|URL2|URL3</div>
+
+            <h3 style="margin-top: 1rem;">JavaScript:</h3>
+            <div class="preview">
+const urls = ['url1.pdf', 'url2.pdf', 'url3.pdf'];<br>
+const link = `http://localhost:4200/?urls=${urls.join(',')}`;<br>
+window.open(link, '_blank');
+            </div>
+        </div>
+
+        <div class="section">
+            <h2><span class="emoji">🎯</span>Casos de Uso</h2>
+            
+            <div class="feature-box">
+                <h3>Sistema de Documentação</h3>
+                <p style="color: #666; margin-top: 0.5rem;">
+                    Carregar manual + tutorial + FAQ de uma vez
+                </p>
+            </div>
+
+            <div class="feature-box">
+                <h3>Onboarding de Funcionários</h3>
+                <p style="color: #666; margin-top: 0.5rem;">
+                    Contrato + políticas + benefícios
+                </p>
+            </div>
+
+            <div class="feature-box">
+                <h3>Material Didático</h3>
+                <p style="color: #666; margin-top: 0.5rem;">
+                    Aulas em sequência + exercícios
+                </p>
+            </div>
+
+            <div class="feature-box">
+                <h3>Relatórios Trimestrais</h3>
+                <p style="color: #666; margin-top: 0.5rem;">
+                    Q1 + Q2 + Q3 + Q4 para comparação
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let urlCount = 0;
+
+        function addUrlInput() {
+            urlCount++;
+            const container = document.getElementById('urlInputs');
+            const div = document.createElement('div');
+            div.className = 'url-input-group';
+            div.id = `url-input-${urlCount}`;
+            div.innerHTML = `
+                <input 
+                    type="text" 
+                    id="url-${urlCount}"
+                    placeholder="https://example.com/documento${urlCount}.pdf"
+                    oninput="generateLink()">
+                <button onclick="removeUrlInput(${urlCount})">✕</button>
+            `;
+            container.appendChild(div);
+            
+            if (urlCount === 1) {
+                generateLink();
+            }
+        }
+
+        function removeUrlInput(id) {
+            const element = document.getElementById(`url-input-${id}`);
+            if (element) {
+                element.remove();
+                generateLink();
+            }
+        }
+
+        function generateLink() {
+            const inputs = document.querySelectorAll('[id^="url-"]');
+            const urls = Array.from(inputs)
+                .map(input => input.value.trim())
+                .filter(url => url);
+
+            const resultDiv = document.getElementById('result');
+            const linkDiv = document.getElementById('generatedLink');
+            const openLink = document.getElementById('openLink');
+
+            if (urls.length > 0) {
+                const urlsParam = urls.join(',');
+                const finalLink = `http://localhost:4200/?urls=${encodeURIComponent(urlsParam)}`;
+                
+                linkDiv.innerHTML = `<a href="${finalLink}" target="_blank">${finalLink}</a>`;
+                openLink.href = finalLink;
+                resultDiv.style.display = 'block';
+            } else {
+                resultDiv.style.display = 'none';
+            }
+        }
+
+        function copyLink() {
+            const linkText = document.querySelector('#generatedLink a').href;
+            navigator.clipboard.writeText(linkText).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copiado!';
+                
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            }).catch(err => {
+                alert('Erro ao copiar: ' + err);
+            });
+        }
+
+        // Adiciona 2 campos iniciais
+        addUrlInput();
+        addUrlInput();
+
+        // Preenche exemplos
+        document.getElementById('url-1').value = 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
+        document.getElementById('url-2').value = 'https://www.africau.edu/images/default/sample.pdf';
+        generateLink();
+    </script>
+</body>
+</html>
