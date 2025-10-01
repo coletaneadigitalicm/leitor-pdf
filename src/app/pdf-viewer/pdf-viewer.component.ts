@@ -53,44 +53,100 @@ export class PdfViewerComponent implements OnInit {
   private instructionsTimeout?: number;
   private touchEndX = 0;
   private pdfjsLib: any;
+  private pdfjsReady: Promise<void>;
+  private lastLoadedUrl: string = '';
 
-  constructor(private route: ActivatedRoute) {}
+  constructor(private route: ActivatedRoute) {
+    // Inicia o carregamento do PDF.js imediatamente
+    this.pdfjsReady = this.loadPdfJs();
+  }
 
-  ngOnInit() {
-    this.loadPdfJs();
+  async ngOnInit() {
+    // Aguarda o PDF.js estar pronto antes de verificar URLs
+    await this.pdfjsReady;
+    
+    // Verifica URL na inicialização
     this.checkUrlParameter();
+    
+    // Monitora mudanças nos query params do Angular
+    this.route.queryParams.subscribe(() => {
+      this.checkUrlParameter();
+    });
+    
+    // Monitora mudanças manuais na URL (quando usuário altera e dá enter)
+    window.addEventListener('popstate', () => {
+      this.checkUrlParameter();
+    });
   }
 
   private checkUrlParameter() {
-    // Verifica se há parâmetros 'url' ou 'urls' na query string
-    this.route.queryParams.subscribe(params => {
-      const urlParam = params['url'];
-      const urlsParam = params['urls'];
+    // Pega a URL completa com hash (Angular Router remove o hash dos query params)
+    const fullUrl = window.location.href;
+    
+    // Extrai os query params manualmente
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlParam = urlParams.get('url');
+    const urlsParam = urlParams.get('urls');
 
-      if (urlsParam) {
-        // Múltiplas URLs separadas por vírgula ou pipe
-        const urls = urlsParam.split(/[,|]/).map((u: string) => u.trim()).filter((u: string) => u);
+    if (urlsParam) {
+      // Múltiplas URLs separadas por vírgula ou pipe
+      const urls = urlsParam.split(/[,|]/).map((u: string) => u.trim()).filter((u: string) => u);
+      
+      // Cria identificador único das URLs para comparação
+      const urlsKey = urls.join('|');
+      
+      // Só recarrega se for diferente da última carga
+      if (urlsKey !== this.lastLoadedUrl) {
         console.log('[PDF Viewer] Multiple URLs detected:', urls.length);
+        this.lastLoadedUrl = urlsKey;
         this.loadMultiplePdfs(urls);
-      } else if (urlParam) {
-        const decodedUrl = decodeURIComponent(urlParam);
-        console.log('[PDF Viewer] Single URL detected:', decodedUrl);
-        this.loadMultiplePdfs([decodedUrl]);
-      } else {
-        console.log('[PDF Viewer] No query param found, showing upload screen');
       }
-    });
+    } else if (urlParam) {
+      // Decodifica a URL completa preservando o hash
+      let decodedUrl = decodeURIComponent(urlParam);
+      
+      // Verifica se há hash na URL da página que foi perdido
+      // Formato: ?url=PDF_URL → hash pode estar após o valor do parâmetro
+      const pageUrlMatch = fullUrl.match(/[?&]url=([^&]*)/);
+      if (pageUrlMatch && pageUrlMatch[1]) {
+        decodedUrl = decodeURIComponent(pageUrlMatch[1]);
+      }
+      
+      // Só recarrega se for diferente da última carga
+      if (decodedUrl !== this.lastLoadedUrl) {
+        console.log('[PDF Viewer] Single URL detected:', decodedUrl);
+        this.lastLoadedUrl = decodedUrl;
+        this.loadMultiplePdfs([decodedUrl]);
+      }
+    } else {
+      // Limpa o último carregamento se não há mais parâmetros
+      if (this.lastLoadedUrl !== '') {
+        console.log('[PDF Viewer] No query param found, showing upload screen');
+        this.lastLoadedUrl = '';
+        // Limpa os documentos carregados
+        this.pdfDocuments.set([]);
+        this.pdfLoaded.set(false);
+      }
+    }
   }
 
   private async loadMultiplePdfs(urls: string[]) {
     if (urls.length === 0) return;
 
+    // Aguarda o PDF.js estar pronto
+    await this.pdfjsReady;
+
     // Cria os documentos
     const docs: PdfDocument[] = urls.map((url, index) => {
+      // Extrai a página inicial ANTES de remover o hash
       const initialPage = this.extractPageFromUrl(url);
+      
+      // Remove o hash da URL para o carregamento do PDF
+      const cleanUrl = url.split('#')[0];
+      
       return {
         id: `pdf-${index}-${Date.now()}`,
-        url: decodeURIComponent(url).split('#')[0], // Remove hash da URL
+        url: cleanUrl,
         name: this.extractFileName(url, index),
         doc: null,
         totalPages: 0,
@@ -222,22 +278,24 @@ export class PdfViewerComponent implements OnInit {
 
   private extractPageFromUrl(url: string): number | undefined {
     try {
-      const decodedUrl = decodeURIComponent(url);
-      
       // Verifica se há hash na URL
-      if (!decodedUrl.includes('#')) {
+      if (!url.includes('#')) {
         return undefined;
       }
 
       // Extrai o hash
-      const hash = decodedUrl.split('#')[1];
+      const hash = url.split('#')[1];
+      
+      if (!hash) {
+        return undefined;
+      }
       
       // Procura por page=N no hash
       const pageMatch = hash.match(/page=(\d+)/i);
       
       if (pageMatch && pageMatch[1]) {
         const pageNum = parseInt(pageMatch[1], 10);
-        console.log(`[PDF Viewer] Found page number in URL: ${pageNum}`);
+        console.log(`[PDF Viewer] Found page number in URL hash: ${pageNum}`);
         return pageNum;
       }
 
@@ -300,9 +358,12 @@ export class PdfViewerComponent implements OnInit {
       
       // Configura o worker usando o CDN
       this.pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+      
+      console.log('[PDF Viewer] PDF.js loaded successfully, version:', pdfjs.version);
     } catch (error) {
       console.error('Erro ao carregar PDF.js:', error);
       this.errorMessage.set('Erro ao inicializar o visualizador de PDF');
+      throw error;
     }
   }
 
@@ -356,6 +417,9 @@ export class PdfViewerComponent implements OnInit {
     console.log(`[PDF Viewer] Uploading ${files.length} PDF(s)...`);
 
     try {
+      // Aguarda o PDF.js estar pronto
+      await this.pdfjsReady;
+      
       // Cria os documentos para todos os arquivos
       const docs: PdfDocument[] = files.map((file, index) => ({
         id: `pdf-upload-${index}-${Date.now()}`,
@@ -469,12 +533,18 @@ export class PdfViewerComponent implements OnInit {
       return;
     }
 
+    // Aguarda o PDF.js estar pronto
+    await this.pdfjsReady;
+    
     console.log('[PDF Viewer] Loading PDF from URL...');
     this.loadMultiplePdfs([url]);
   }
 
   async loadPdfFromData(data: ArrayBuffer, fileName: string = 'Documento') {
     try {
+      // Aguarda o PDF.js estar pronto
+      await this.pdfjsReady;
+      
       const loadingTask = this.pdfjsLib.getDocument({ data });
       const pdfDoc = await loadingTask.promise;
       
