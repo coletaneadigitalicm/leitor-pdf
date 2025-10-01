@@ -48,10 +48,13 @@ export class PdfViewerComponent implements OnInit {
   isDragging = signal(false);
   pdfLoaded = signal(false);
   showInstructions = signal(false);
+  pageTransitionDirection = signal<'forward' | 'backward'>('forward');
 
   private touchStartX = 0;
   private instructionsTimeout?: number;
   private touchEndX = 0;
+  private touchStartY = 0;
+  private touchEndY = 0;
   private pdfjsLib: any;
   private pdfjsReady: Promise<void>;
   private lastLoadedUrl: string = '';
@@ -633,12 +636,14 @@ export class PdfViewerComponent implements OnInit {
   // Navegação
   previousPage() {
     if (this.currentPage() > 1) {
+      this.pageTransitionDirection.set('backward');
       this.renderPage(this.currentPage() - 1);
     }
   }
 
   nextPage() {
     if (this.currentPage() < this.totalPages()) {
+      this.pageTransitionDirection.set('forward');
       this.renderPage(this.currentPage() + 1);
     }
   }
@@ -662,6 +667,8 @@ export class PdfViewerComponent implements OnInit {
     
     // Navega para a página se for diferente da atual
     if (validPage !== this.currentPage()) {
+      // Define direção baseada se está avançando ou retrocedendo
+      this.pageTransitionDirection.set(validPage > this.currentPage() ? 'forward' : 'backward');
       this.renderPage(validPage);
     }
   }
@@ -682,28 +689,55 @@ export class PdfViewerComponent implements OnInit {
     this.renderPage(this.currentPage());
   }
 
-  // Touch/Swipe gestures
+  // Touch/Swipe gestures - Virar página como livro
   onTouchStart(event: TouchEvent) {
-    this.touchStartX = event.changedTouches[0].screenX;
+    const touch = event.changedTouches[0];
+    this.touchStartX = touch.screenX;
+    this.touchStartY = touch.screenY;
   }
 
   onTouchEnd(event: TouchEvent) {
-    this.touchEndX = event.changedTouches[0].screenX;
+    const touch = event.changedTouches[0];
+    this.touchEndX = touch.screenX;
+    this.touchEndY = touch.screenY;
     this.handleSwipe();
   }
 
   handleSwipe() {
-    const swipeThreshold = 50; // Mínimo de pixels para considerar como swipe
-    const diff = this.touchStartX - this.touchEndX;
-
-    if (Math.abs(diff) > swipeThreshold) {
-      if (diff > 0) {
-        // Swipe para esquerda - próxima página
-        this.nextPage();
-      } else {
-        // Swipe para direita - página anterior
-        this.previousPage();
-      }
+    const screenWidth = window.innerWidth;
+    
+    // Distâncias do movimento
+    const horizontalDistance = Math.abs(this.touchEndX - this.touchStartX);
+    const verticalDistance = Math.abs(this.touchEndY - this.touchStartY);
+    
+    // 1️⃣ Verifica se o movimento é predominantemente horizontal
+    if (verticalDistance > horizontalDistance * 0.5) {
+      // Se muito movimento vertical, ignora (pode ser scroll)
+      console.log('[PDF Viewer] Swipe ignored: too much vertical movement');
+      return;
+    }
+    
+    // 2️⃣ Define threshold baseado na largura da tela (30% mínimo)
+    const swipeThreshold = screenWidth * 0.2;
+    
+    // 3️⃣ Verifica se o movimento foi suficiente
+    if (horizontalDistance < swipeThreshold) {
+      console.log('[PDF Viewer] Swipe ignored: distance too short');
+      return;
+    }
+    
+    // 4️⃣ Calcula a direção do swipe
+    const swipeDirection = this.touchStartX - this.touchEndX;
+    
+    // 5️⃣ Executa a navegação baseada na direção
+    if (swipeDirection > 0) {
+      // Swipe da direita para esquerda (como virar página para frente)
+      console.log('[PDF Viewer] Swipe: Next page (right to left)');
+      this.nextPage();
+    } else {
+      // Swipe da esquerda para direita (como virar página para trás)
+      console.log('[PDF Viewer] Swipe: Previous page (left to right)');
+      this.previousPage();
     }
   }
 

@@ -149,6 +149,8 @@
     <!-- PDF Canvas Container -->
     <div 
       class="pdf-canvas-container"
+      [class.page-forward]="pageTransitionDirection() === 'forward'"
+      [class.page-backward]="pageTransitionDirection() === 'backward'"
       #pdfContainer
       (touchstart)="onTouchStart($event)"
       (touchend)="onTouchEnd($event)">

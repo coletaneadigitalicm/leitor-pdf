@@ -543,6 +543,54 @@
     height: auto;
     background: white;
   }
+  
+  // Animação para frente (próxima página) - MAIS LONGA E VISÍVEL
+  &.page-forward canvas {
+    animation: pageTransitionForward 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  
+  // Animação para trás (página anterior) - MAIS LONGA E VISÍVEL
+  &.page-backward canvas {
+    animation: pageTransitionBackward 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+// Animação de virar página para FRENTE (direita → esquerda) - MAIS VISÍVEL
+@keyframes pageTransitionForward {
+  0% {
+    opacity: 0.3;
+    transform: translateX(80px) scale(0.85) rotateY(-15deg);
+    filter: brightness(0.7);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translateX(40px) scale(0.92) rotateY(-7deg);
+    filter: brightness(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1) rotateY(0deg);
+    filter: brightness(1);
+  }
+}
+
+// Animação de virar página para TRÁS (esquerda → direita) - MAIS VISÍVEL
+@keyframes pageTransitionBackward {
+  0% {
+    opacity: 0.3;
+    transform: translateX(-80px) scale(0.85) rotateY(15deg);
+    filter: brightness(0.7);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translateX(-40px) scale(0.92) rotateY(7deg);
+    filter: brightness(0.85);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1) rotateY(0deg);
+    filter: brightness(1);
+  }
 }
 
 // Loading Overlay
