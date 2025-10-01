@@ -600,9 +600,33 @@ export class PdfViewerComponent implements OnInit {
       container.appendChild(canvas);
 
       this.currentPage.set(pageNumber);
+      this.updateUrlWithCurrentPage(pageNumber);
     } catch (error) {
       console.error('Erro ao renderizar página:', error);
       this.errorMessage.set('Erro ao renderizar a página');
+    }
+  }
+
+  private updateUrlWithCurrentPage(pageNumber: number) {
+    // Atualiza a URL para refletir a página atual
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlParam = urlParams.get('url');
+    
+    if (urlParam) {
+      // Remove hash antigo da URL se existir
+      const cleanUrl = urlParam.split('#')[0];
+      
+      // Adiciona o novo hash com a página atual
+      const newUrlParam = `${cleanUrl}#page=${pageNumber}`;
+      
+      // Atualiza a URL sem recarregar a página
+      urlParams.set('url', newUrlParam);
+      const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+      
+      // Usa replaceState para não adicionar ao histórico
+      window.history.replaceState(null, '', newUrl);
+      
+      console.log(`[PDF Viewer] URL updated to page ${pageNumber}`);
     }
   }
 
@@ -616,6 +640,29 @@ export class PdfViewerComponent implements OnInit {
   nextPage() {
     if (this.currentPage() < this.totalPages()) {
       this.renderPage(this.currentPage() + 1);
+    }
+  }
+
+  goToPage(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const pageNumber = parseInt(input.value, 10);
+    
+    // Valida o número da página
+    if (isNaN(pageNumber)) {
+      // Se inválido, reseta para a página atual
+      input.value = this.currentPage().toString();
+      return;
+    }
+    
+    // Limita entre 1 e totalPages
+    const validPage = Math.max(1, Math.min(pageNumber, this.totalPages()));
+    
+    // Atualiza o input com o valor válido
+    input.value = validPage.toString();
+    
+    // Navega para a página se for diferente da atual
+    if (validPage !== this.currentPage()) {
+      this.renderPage(validPage);
     }
   }
 
