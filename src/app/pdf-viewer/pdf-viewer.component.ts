@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, ElementRef, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -29,7 +29,7 @@ interface PdfDocument {
   templateUrl: './pdf-viewer.component.html',
   styleUrls: ['./pdf-viewer.component.scss']
 })
-export class PdfViewerComponent implements OnInit {
+export class PdfViewerComponent implements OnInit, OnDestroy {
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
   @ViewChild('pdfContainer') pdfContainer!: ElementRef<HTMLDivElement>;
 
@@ -70,10 +70,16 @@ export class PdfViewerComponent implements OnInit {
   private pdfjsLib: any;
   private pdfjsReady: Promise<void>;
   private lastLoadedUrl: string = '';
+  private resizeTimeout?: number; // Debounce para resize
+  private devicePixelRatio: number = 1; // DPI da tela
 
   constructor(private route: ActivatedRoute) {
     // Inicia o carregamento do PDF.js imediatamente
     this.pdfjsReady = this.loadPdfJs();
+    
+    // Detecta o DPI da tela para melhorar a qualidade de renderização
+    this.devicePixelRatio = window.devicePixelRatio || 1;
+    console.log('[PDF Viewer] Device Pixel Ratio detected:', this.devicePixelRatio);
   }
 
   async ngOnInit() {
@@ -92,6 +98,74 @@ export class PdfViewerComponent implements OnInit {
     window.addEventListener('popstate', () => {
       this.checkUrlParameter();
     });
+    
+    // Monitora mudanças no tamanho da janela (rotação de tela, redimensionamento)
+    window.addEventListener('resize', () => this.onWindowResize());
+    
+    // Monitora mudanças no DPI (caso o usuário mova a janela entre monitores com DPIs diferentes)
+    window.matchMedia(`(resolution: ${this.devicePixelRatio}dppx)`).addEventListener('change', () => {
+      this.onDpiChange();
+    });
+  }
+  
+  ngOnDestroy() {
+    // Limpa os listeners quando o componente é destruído
+    window.removeEventListener('resize', () => this.onWindowResize());
+    if (this.resizeTimeout) {
+      clearTimeout(this.resizeTimeout);
+    }
+    if (this.instructionsTimeout) {
+      clearTimeout(this.instructionsTimeout);
+    }
+  }
+  
+  private onWindowResize() {
+    // Debounce: espera 300ms após a última mudança de tamanho para re-renderizar
+    if (this.resizeTimeout) {
+      clearTimeout(this.resizeTimeout);
+    }
+    
+    this.resizeTimeout = window.setTimeout(() => {
+      this.handleResize();
+    }, 300);
+  }
+  
+  private async handleResize() {
+    // Só re-renderiza se tiver um PDF carregado
+    const doc = this.activeDocument();
+    if (!doc || !doc.doc || !this.pdfLoaded()) {
+      return;
+    }
+    
+    console.log('[PDF Viewer] Window resized, re-calculating fit-to-width...');
+    
+    try {
+      // Pega a página atual
+      const page = await doc.doc.getPage(this.currentPage());
+      
+      // Recalcula o autofit com as novas dimensões
+      await this.calculateFitToWidthScale(page);
+      
+      // Re-renderiza a página com o novo scale
+      await this.renderPage(this.currentPage());
+      
+      console.log('[PDF Viewer] Page re-rendered after resize');
+    } catch (error) {
+      console.error('[PDF Viewer] Error handling resize:', error);
+    }
+  }
+  
+  private onDpiChange() {
+    // Atualiza o DPI detectado
+    const newDpi = window.devicePixelRatio || 1;
+    
+    if (newDpi !== this.devicePixelRatio) {
+      console.log('[PDF Viewer] Device Pixel Ratio changed:', this.devicePixelRatio, '->', newDpi);
+      this.devicePixelRatio = newDpi;
+      
+      // Re-renderiza para aproveitar a nova resolução
+      this.handleResize();
+    }
   }
 
   private checkUrlParameter() {
@@ -647,18 +721,36 @@ export class PdfViewerComponent implements OnInit {
         await this.calculateFitToWidthScale(page);
       }
       
-      const viewport = page.getViewport({ scale: this.scale() });
+      // Calcula o scale com DPI para melhor qualidade
+      // Multiplica o scale pelo devicePixelRatio para renderizar em resolução nativa
+      const renderScale = this.scale() * this.devicePixelRatio;
+      const viewport = page.getViewport({ scale: renderScale });
 
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
       
+      // Define o tamanho do canvas em pixels físicos (alta resolução)
       canvas.height = viewport.height;
       canvas.width = viewport.width;
+      
+      // Define o tamanho CSS do canvas (em pixels lógicos)
+      // Isso faz o canvas de alta resolução caber no espaço correto
+      canvas.style.width = `${viewport.width / this.devicePixelRatio}px`;
+      canvas.style.height = `${viewport.height / this.devicePixelRatio}px`;
 
       const renderContext = {
         canvasContext: context,
         viewport: viewport
       };
+
+      console.log('[PDF Viewer] Rendering page:', {
+        pageNumber,
+        userScale: this.scale(),
+        devicePixelRatio: this.devicePixelRatio,
+        finalRenderScale: renderScale,
+        canvasSize: `${canvas.width}x${canvas.height}px`,
+        displaySize: `${canvas.style.width}x${canvas.style.height}`
+      });
 
       await page.render(renderContext).promise;
 
