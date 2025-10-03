@@ -780,8 +780,8 @@ export class PdfViewerComponent implements OnInit, OnDestroy {
       // 3. Calcula scale ideal para caber perfeitamente
       const fitScale = availableWidth / originalViewport.width;
       
-      // 4. Aplica scale (limitado entre 0.5 e 3.0)
-      const finalScale = Math.max(0.5, Math.min(fitScale, 3.0));
+  // 4. Aplica scale (limitado entre 0.5 e 9.0)
+  const finalScale = Math.max(0.5, Math.min(fitScale, 9.0));
       
       // 5. Salva o autofit scale para referência futura
       this.autoFitScale.set(finalScale);
@@ -866,7 +866,7 @@ export class PdfViewerComponent implements OnInit, OnDestroy {
 
   // Zoom - mantém o valor entre documentos
   zoomIn() {
-    this.scale.update(s => Math.min(s + 0.25, 3.0));
+    this.scale.update(s => Math.min(s + 0.25, 9.0));
     this.renderPage(this.currentPage());
   }
 
