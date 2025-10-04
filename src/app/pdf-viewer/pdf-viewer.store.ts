@@ -1,6 +1,8 @@
 import { Injectable, signal, computed } from '@angular/core';
 
 import { PdfRendererService } from './services/pdf-renderer.service';
+import { PdfUrlParser } from './utils/pdf-url-parser';
+import { PdfAutoFitCalculator } from './utils/pdf-auto-fit-calculator';
 
 export interface PdfDocument {
   id: string;
@@ -198,13 +200,13 @@ export class PdfViewerStore {
     await this.pdfjsReady;
 
     const docs: PdfDocument[] = urls.map((url, index) => {
-      const initialPage = this.extractPageFromUrl(url);
+      const initialPage = PdfUrlParser.extractPageFromUrl(url);
       const cleanUrl = url.split('#')[0];
 
       return {
         id: `pdf-${index}-${Date.now()}`,
         url: cleanUrl,
-        name: this.extractFileName(url, index),
+        name: PdfUrlParser.extractFileName(url, index),
         doc: null,
         totalPages: 0,
         isLoaded: false,
@@ -512,51 +514,6 @@ export class PdfViewerStore {
     console.log('[PDF Viewer] PDF uploaded successfully:', doc.totalPages, 'pages');
   }
 
-  private extractFileName(url: string, index: number): string {
-    try {
-      const decodedUrl = decodeURIComponent(url);
-      const urlWithoutHash = decodedUrl.split('#')[0];
-      const urlObj = new URL(urlWithoutHash);
-      const pathname = urlObj.pathname;
-      const fileName = pathname.split('/').pop() || '';
-
-      if (fileName && fileName.endsWith('.pdf')) {
-        return fileName.replace('.pdf', '');
-      }
-
-      return `Documento ${index + 1}`;
-    } catch {
-      return `Documento ${index + 1}`;
-    }
-  }
-
-  private extractPageFromUrl(url: string): number | undefined {
-    try {
-      if (!url.includes('#')) {
-        return undefined;
-      }
-
-      const hash = url.split('#')[1];
-
-      if (!hash) {
-        return undefined;
-      }
-
-      const pageMatch = hash.match(/page=(\d+)/i);
-
-      if (pageMatch && pageMatch[1]) {
-        const pageNum = parseInt(pageMatch[1], 10);
-        console.log(`[PDF Viewer] Found page number in URL hash: ${pageNum}`);
-        return pageNum;
-      }
-
-      return undefined;
-    } catch (error) {
-      console.warn('[PDF Viewer] Error extracting page from URL:', error);
-      return undefined;
-    }
-  }
-
   async renderPage(pageNumber: number, applyAutoFit: boolean = false): Promise<void> {
     const doc = this.activeDocument();
     if (!doc || !doc.doc) return;
@@ -585,13 +542,37 @@ export class PdfViewerStore {
       const prevScrollLeftPct = prevMaxScrollLeft > 0 ? prevScrollLeft / prevMaxScrollLeft : 0;
       const prevScrollTopPct = prevMaxScrollTop > 0 ? prevScrollTop / prevMaxScrollTop : 0;
 
-      const { canvas, viewport, appliedScale } = await this.renderer.renderPage(
+      const { canvas, appliedScale } = await this.renderer.renderPage(
         doc.doc,
         pageNumber,
         this.scale(),
         this.devicePixelRatio,
         applyAutoFit,
-        page => this.calculateFitToWidthScale(page)
+        async page => {
+          const autoFitResult = PdfAutoFitCalculator.calculateFitToWidthScale(page, this.pdfContainer);
+          if (autoFitResult) {
+            const { scale } = autoFitResult;
+            this.autoFitScale.set(scale);
+            this.scale.set(scale);
+
+            const calculatedScale = autoFitResult.pdfWidth === 0
+              ? scale
+              : autoFitResult.availableWidth / autoFitResult.pdfWidth;
+
+            console.log('[PDF Viewer] Auto-fit scale calculated:', {
+              containerWidth: autoFitResult.containerWidth,
+              availableWidth: autoFitResult.availableWidth,
+              pdfWidth: autoFitResult.pdfWidth,
+              calculatedScale,
+              finalScale: scale,
+              percentage: Math.round(scale * 100) + '%'
+            });
+
+            return scale;
+          }
+
+          return null;
+        }
       );
 
       this.scale.set(appliedScale);
@@ -651,51 +632,12 @@ export class PdfViewerStore {
         } catch {}
       });
 
-      this.updateUrlWithCurrentPage(pageNumber);
+      if (PdfUrlParser.updateUrlWithCurrentPage(pageNumber)) {
+        console.log(`[PDF Viewer] URL updated to page ${pageNumber}`);
+      }
     } catch (error) {
       console.error('Erro ao renderizar página:', error);
       this.errorMessage.set('Erro ao renderizar a página');
-    }
-  }
-
-  private async calculateFitToWidthScale(page: any): Promise<number | null> {
-    try {
-      const originalViewport = page.getViewport({ scale: 1.0 });
-      const containerWidth = this.pdfContainer?.offsetWidth ?? 0;
-      const paddingTotal = 64;
-      const availableWidth = containerWidth - paddingTotal;
-      const fitScale = availableWidth / originalViewport.width;
-      const finalScale = Math.max(0.5, Math.min(fitScale, 9.0));
-
-      this.autoFitScale.set(finalScale);
-      this.scale.set(finalScale);
-
-      console.log('[PDF Viewer] Auto-fit scale calculated:', {
-        containerWidth,
-        availableWidth,
-        pdfWidth: originalViewport.width,
-        calculatedScale: fitScale,
-        finalScale: finalScale,
-        percentage: Math.round(finalScale * 100) + '%'
-      });
-      return finalScale;
-    } catch (error) {
-      console.error('[PDF Viewer] Error calculating fit-to-width scale:', error);
-      return null;
-    }
-  }
-
-  private updateUrlWithCurrentPage(pageNumber: number) {
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlParam = urlParams.get('url');
-
-    if (urlParam) {
-      const cleanUrl = urlParam.split('#')[0];
-      const newUrlParam = `${cleanUrl}#page=${pageNumber}`;
-      urlParams.set('url', newUrlParam);
-      const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
-      window.history.replaceState(null, '', newUrl);
-      console.log(`[PDF Viewer] URL updated to page ${pageNumber}`);
     }
   }
 
