@@ -1,0 +1,9 @@
+<div
+  #viewportContainer
+  class="pdf-canvas-container"
+  [class.page-forward]="pageTransitionDirection() === 'forward'"
+  [class.page-backward]="pageTransitionDirection() === 'backward'"
+  [class.swiping]="isSwipingActive()"
+  [style.--swipe-offset.px]="swipeOffset()"
+  appPdfSwipeGesture
+></div>

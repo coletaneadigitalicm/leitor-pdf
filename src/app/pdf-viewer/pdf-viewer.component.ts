@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, AfterViewInit, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -7,18 +7,18 @@ import { Subscription } from 'rxjs';
 import { PdfControlsBarComponent } from './components/pdf-controls-bar/pdf-controls-bar.component';
 import { PdfDocumentTabsComponent } from './components/pdf-document-tabs/pdf-document-tabs.component';
 import { PdfViewerStore } from './pdf-viewer.store';
+import { PdfViewportComponent } from './components/pdf-viewport/pdf-viewport.component';
 
 @Component({
   selector: 'app-pdf-viewer',
   standalone: true,
-  imports: [CommonModule, FormsModule, PdfControlsBarComponent, PdfDocumentTabsComponent],
+  imports: [CommonModule, FormsModule, PdfControlsBarComponent, PdfDocumentTabsComponent, PdfViewportComponent],
   templateUrl: './pdf-viewer.component.html',
   styleUrls: ['./pdf-viewer.component.scss'],
   providers: [PdfViewerStore]
 })
-export class PdfViewerComponent implements OnInit, AfterViewInit, OnDestroy {
+export class PdfViewerComponent implements OnInit, OnDestroy {
   @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
-  @ViewChild('pdfContainer') pdfContainer!: ElementRef<HTMLDivElement>;
 
   readonly pdfDocuments: PdfViewerStore['pdfDocuments'];
   readonly activeDocumentIndex: PdfViewerStore['activeDocumentIndex'];
@@ -90,12 +90,6 @@ export class PdfViewerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.dpiMediaQuery.addEventListener('change', this.dpiChangeHandler);
   }
 
-  ngAfterViewInit(): void {
-    if (this.pdfContainer) {
-      this.store.setPdfContainer(this.pdfContainer.nativeElement);
-    }
-  }
-
   ngOnDestroy(): void {
     window.removeEventListener('popstate', this.popStateHandler);
     window.removeEventListener('resize', this.resizeHandler);
@@ -151,18 +145,6 @@ export class PdfViewerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async loadPdfFromData(data: ArrayBuffer, fileName: string = 'Documento'): Promise<void> {
     await this.store.loadPdfFromData(data, fileName);
-  }
-
-  onTouchStart(event: TouchEvent): void {
-    this.store.onTouchStart(event);
-  }
-
-  onTouchMove(event: TouchEvent): void {
-    this.store.onTouchMove(event);
-  }
-
-  onTouchEnd(event: TouchEvent): void {
-    this.store.onTouchEnd(event);
   }
 
   onKeyDown(event: KeyboardEvent): void {

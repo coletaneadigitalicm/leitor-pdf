@@ -60,17 +60,7 @@
     <app-pdf-document-tabs *ngIf="hasMultipleDocs()"></app-pdf-document-tabs>
 
     <!-- PDF Canvas Container -->
-    <div 
-      class="pdf-canvas-container"
-      [class.page-forward]="pageTransitionDirection() === 'forward'"
-      [class.page-backward]="pageTransitionDirection() === 'backward'"
-      [class.swiping]="isSwipingActive()"
-      [style.--swipe-offset.px]="swipeOffset()"
-      #pdfContainer
-      (touchstart)="onTouchStart($event)"
-      (touchmove)="onTouchMove($event)"
-      (touchend)="onTouchEnd($event)">
-    </div>
+    <app-pdf-viewport></app-pdf-viewport>
   </div>
 
   <!-- Loading Indicator -->

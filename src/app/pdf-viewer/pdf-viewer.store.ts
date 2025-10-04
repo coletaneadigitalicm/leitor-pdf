@@ -1,5 +1,7 @@
 import { Injectable, signal, computed } from '@angular/core';
 
+import { PdfRendererService } from './services/pdf-renderer.service';
+
 export interface PdfDocument {
   id: string;
   url: string;
@@ -47,7 +49,6 @@ export class PdfViewerStore {
   private touchStartY = 0;
   private touchStartTime = 0;
   private instructionsTimeout?: number;
-  private pdfjsLib: any;
   private pdfjsReady: Promise<void>;
   private lastLoadedUrl = '';
   private resizeTimeout?: number;
@@ -55,9 +56,9 @@ export class PdfViewerStore {
   private pdfContainer?: HTMLDivElement;
   private pendingRender: { pageNumber: number; applyAutoFit: boolean } | null = null;
 
-  constructor() {
-    this.pdfjsReady = this.loadPdfJs();
-    this.devicePixelRatio = window.devicePixelRatio || 1;
+  constructor(private readonly renderer: PdfRendererService) {
+    this.pdfjsReady = this.renderer.getPdfJsReady();
+    this.devicePixelRatio = this.renderer.devicePixelRatio();
     console.log('[PDF Viewer] Device Pixel Ratio detected:', this.devicePixelRatio);
   }
 
@@ -137,9 +138,7 @@ export class PdfViewerStore {
     console.log('[PDF Viewer] Window resized, re-calculating fit-to-width...');
 
     try {
-      const page = await doc.doc.getPage(this.currentPage());
-      await this.calculateFitToWidthScale(page);
-      await this.renderPage(this.currentPage());
+      await this.renderPage(this.currentPage(), true);
       console.log('[PDF Viewer] Page re-rendered after resize');
     } catch (error) {
       console.error('[PDF Viewer] Error handling resize:', error);
@@ -151,6 +150,7 @@ export class PdfViewerStore {
     if (newDpi !== this.devicePixelRatio) {
       console.log('[PDF Viewer] Device Pixel Ratio changed:', this.devicePixelRatio, '->', newDpi);
       this.devicePixelRatio = newDpi;
+      this.renderer.setDevicePixelRatio(newDpi);
       this.handleResize();
     }
   }
@@ -256,23 +256,14 @@ export class PdfViewerStore {
       console.log(`[PDF Viewer] Loading PDF ${index + 1}/${docs.length}:`, doc.url);
       console.log('[PDF Viewer] Using progressive loading (Range Requests)');
 
-      const loadingTask = this.pdfjsLib.getDocument({
-        url: doc.url,
-        disableRange: false,
-        disableStream: false,
-        disableAutoFetch: true,
-        rangeChunkSize: 524288,
-      });
-
-      loadingTask.onProgress = (progressData: any) => {
-        if (progressData.total > 0) {
-          const percent = Math.round((progressData.loaded / progressData.total) * 100);
-          console.log(`[PDF Viewer] Download progress: ${percent}% (${progressData.loaded}/${progressData.total} bytes)`);
+      const pdfDoc = await this.renderer.loadDocumentFromUrl(doc.url, {
+        onProgress: (progressData: any) => {
+          if (progressData.total > 0) {
+            const percent = Math.round((progressData.loaded / progressData.total) * 100);
+            console.log(`[PDF Viewer] Download progress: ${percent}% (${progressData.loaded}/${progressData.total} bytes)`);
+          }
         }
-      };
-
-      const pdfDoc = await loadingTask.promise;
-      console.log('[PDF Viewer] PDF metadata loaded, pages will be fetched on demand');
+      });
 
       this.pdfDocuments.update(currentDocs => {
         const newDocs = [...currentDocs];
@@ -369,19 +360,6 @@ export class PdfViewerStore {
     }, 3000);
   }
 
-  async loadPdfJs() {
-    try {
-      const pdfjs = await import('pdfjs-dist');
-      this.pdfjsLib = pdfjs;
-      this.pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-      console.log('[PDF Viewer] PDF.js loaded successfully, version:', pdfjs.version);
-    } catch (error) {
-      console.error('Erro ao carregar PDF.js:', error);
-      this.errorMessage.set('Erro ao inicializar o visualizador de PDF');
-      throw error;
-    }
-  }
-
   setDragging(isDragging: boolean): void {
     this.isDragging.set(isDragging);
   }
@@ -457,14 +435,7 @@ export class PdfViewerStore {
 
       const arrayBuffer = await file.arrayBuffer();
 
-      const loadingTask = this.pdfjsLib.getDocument({
-        data: arrayBuffer,
-        disableAutoFetch: true,
-        disableStream: false,
-        disableRange: false,
-      });
-
-      const pdfDoc = await loadingTask.promise;
+  const pdfDoc = await this.renderer.loadDocumentFromData(arrayBuffer);
 
       this.pdfDocuments.update(currentDocs => {
         const newDocs = [...currentDocs];
@@ -517,8 +488,7 @@ export class PdfViewerStore {
   async loadPdfFromData(data: ArrayBuffer, fileName: string = 'Documento'): Promise<void> {
     await this.pdfjsReady;
 
-    const loadingTask = this.pdfjsLib.getDocument({ data });
-    const pdfDoc = await loadingTask.promise;
+  const pdfDoc = await this.renderer.loadDocumentFromData(data);
 
     const doc: PdfDocument = {
       id: `pdf-upload-${Date.now()}`,
@@ -601,39 +571,6 @@ export class PdfViewerStore {
     this.pendingRender = null;
 
     try {
-      const page = await doc.doc.getPage(pageNumber);
-
-      if (applyAutoFit) {
-        await this.calculateFitToWidthScale(page);
-      }
-
-      const renderScale = this.scale() * this.devicePixelRatio;
-      const viewport = page.getViewport({ scale: renderScale });
-
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      canvas.style.width = `${viewport.width / this.devicePixelRatio}px`;
-      canvas.style.height = `${viewport.height / this.devicePixelRatio}px`;
-
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport
-      };
-
-      console.log('[PDF Viewer] Rendering page:', {
-        pageNumber,
-        userScale: this.scale(),
-        devicePixelRatio: this.devicePixelRatio,
-        finalRenderScale: renderScale,
-        canvasSize: `${canvas.width}x${canvas.height}px`,
-        displaySize: `${canvas.style.width}x${canvas.style.height}`
-      });
-
-      await page.render(renderContext).promise;
-
       const container = this.pdfContainer;
       const prevClientW = container.clientWidth;
       const prevClientH = container.clientHeight;
@@ -647,6 +584,26 @@ export class PdfViewerStore {
       const hadVOverflow = prevScrollH > prevClientH;
       const prevScrollLeftPct = prevMaxScrollLeft > 0 ? prevScrollLeft / prevMaxScrollLeft : 0;
       const prevScrollTopPct = prevMaxScrollTop > 0 ? prevScrollTop / prevMaxScrollTop : 0;
+
+      const { canvas, viewport, appliedScale } = await this.renderer.renderPage(
+        doc.doc,
+        pageNumber,
+        this.scale(),
+        this.devicePixelRatio,
+        applyAutoFit,
+        page => this.calculateFitToWidthScale(page)
+      );
+
+      this.scale.set(appliedScale);
+
+      console.log('[PDF Viewer] Rendering page:', {
+        pageNumber,
+        userScale: appliedScale,
+        devicePixelRatio: this.devicePixelRatio,
+        finalRenderScale: appliedScale * this.devicePixelRatio,
+        canvasSize: `${canvas.width}x${canvas.height}px`,
+        displaySize: `${canvas.style.width}x${canvas.style.height}`
+      });
 
       container.innerHTML = '';
       container.appendChild(canvas);
@@ -701,7 +658,7 @@ export class PdfViewerStore {
     }
   }
 
-  private async calculateFitToWidthScale(page: any): Promise<void> {
+  private async calculateFitToWidthScale(page: any): Promise<number | null> {
     try {
       const originalViewport = page.getViewport({ scale: 1.0 });
       const containerWidth = this.pdfContainer?.offsetWidth ?? 0;
@@ -721,8 +678,10 @@ export class PdfViewerStore {
         finalScale: finalScale,
         percentage: Math.round(finalScale * 100) + '%'
       });
+      return finalScale;
     } catch (error) {
       console.error('[PDF Viewer] Error calculating fit-to-width scale:', error);
+      return null;
     }
   }
 
@@ -780,9 +739,7 @@ export class PdfViewerStore {
     if (!doc || !doc.doc) return;
 
     try {
-      const page = await doc.doc.getPage(this.currentPage());
-      await this.calculateFitToWidthScale(page);
-      await this.renderPage(this.currentPage());
+      await this.renderPage(this.currentPage(), true);
       console.log('[PDF Viewer] Fit to width applied:', Math.round(this.scale() * 100) + '%');
     } catch (error) {
       console.error('[PDF Viewer] Error applying fit to width:', error);
