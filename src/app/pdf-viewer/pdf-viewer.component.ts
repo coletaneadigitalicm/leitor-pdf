@@ -756,10 +756,26 @@ export class PdfViewerComponent implements OnInit, OnDestroy {
 
       await page.render(renderContext).promise;
 
-      // Simplesmente substitui o canvas (sem animações)
-      const container = this.pdfContainer.nativeElement;
-      container.innerHTML = '';
-      container.appendChild(canvas);
+  // Simplesmente substitui o canvas (sem animações)
+  const container = this.pdfContainer.nativeElement;
+
+  // Guarda posição de scroll atual (para tentar preservar após re-render)
+  const prevClientW = container.clientWidth;
+  const prevClientH = container.clientHeight;
+  const prevScrollW = container.scrollWidth;
+  const prevScrollH = container.scrollHeight;
+  const prevMaxScrollLeft = Math.max(0, prevScrollW - prevClientW);
+  const prevMaxScrollTop = Math.max(0, prevScrollH - prevClientH);
+  const prevScrollLeft = container.scrollLeft;
+  const prevScrollTop = container.scrollTop;
+  const hadHOverflow = prevScrollW > prevClientW;
+  const hadVOverflow = prevScrollH > prevClientH;
+  // Percentuais atuais de scroll (0..1)
+  const prevScrollLeftPct = prevMaxScrollLeft > 0 ? prevScrollLeft / prevMaxScrollLeft : 0;
+  const prevScrollTopPct = prevMaxScrollTop > 0 ? prevScrollTop / prevMaxScrollTop : 0;
+
+  container.innerHTML = '';
+  container.appendChild(canvas);
 
       // Após inserir, verificar se canvas excede o container
       // Se exceder, habilitar scroll nativo no container (overflow auto)
@@ -768,12 +784,50 @@ export class PdfViewerComponent implements OnInit, OnDestroy {
         try {
           const containerRect = container.getBoundingClientRect();
           const canvasRect = canvas.getBoundingClientRect();
-          const overflows = canvasRect.width > containerRect.width || canvasRect.height > containerRect.height;
+          const hOverflow = canvasRect.width > containerRect.width;
+          const vOverflow = canvasRect.height > containerRect.height;
+          const overflows = hOverflow || vOverflow;
           this.isOverflowing.set(overflows);
+
+          // Ativa scroll nativo quando necessário
           container.style.overflow = overflows ? 'auto' : 'hidden';
+          // Importante: quando há overflow horizontal, alinhar conteúdo à esquerda
+          // para permitir "rolar para a esquerda" (em vez de centralizar via flex)
+          (container.style as any).justifyContent = hOverflow ? 'flex-start' : 'center';
+          (container.style as any).alignItems = vOverflow ? 'flex-start' : 'center';
           // Quando há overflow, permitir pan horizontal e vertical com touch
-          // Se não há overflow, priorizamos os gestos verticais e swipe
           container.style.touchAction = overflows ? 'pan-x pan-y' : 'pan-y';
+
+          // Após definir overflow/alinhamento, tentar preservar (ou centralizar) a posição de scroll
+          const newClientW = container.clientWidth;
+          const newClientH = container.clientHeight;
+          const newScrollW = container.scrollWidth;
+          const newScrollH = container.scrollHeight;
+          const newMaxScrollLeft = Math.max(0, newScrollW - newClientW);
+          const newMaxScrollTop = Math.max(0, newScrollH - newClientH);
+
+          // Estratégia:
+          // - Se já havia overflow antes, preserva a proporção de scroll (evita "pular" para o canto)
+          // - Se não havia e passou a ter, centraliza para permitir rolar tanto à esquerda quanto à direita
+          if (hOverflow) {
+            if (hadHOverflow) {
+              container.scrollLeft = prevScrollLeftPct * newMaxScrollLeft;
+            } else {
+              container.scrollLeft = newMaxScrollLeft / 2; // centraliza horizontalmente
+            }
+          } else {
+            container.scrollLeft = 0;
+          }
+
+          if (vOverflow) {
+            if (hadVOverflow) {
+              container.scrollTop = prevScrollTopPct * newMaxScrollTop;
+            } else {
+              container.scrollTop = 0; // mantém topo quando passar a ter overflow vertical
+            }
+          } else {
+            container.scrollTop = 0;
+          }
         } catch {}
       });
 
