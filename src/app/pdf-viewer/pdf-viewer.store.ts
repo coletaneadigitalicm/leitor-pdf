@@ -100,6 +100,25 @@ export class PdfViewerStore {
     this.pendingRender = null;
   }
 
+  resetViewer(): void {
+    this.pdfDocuments.set([]);
+    this.activeDocumentIndex.set(0);
+    this.currentPage.set(1);
+    this.totalPages.set(0);
+    this.scale.set(1.0);
+    this.autoFitScale.set(null);
+    this.pdfUrl.set('');
+    this.errorMessage.set('');
+    this.pdfLoaded.set(false);
+    this.showInstructions.set(false);
+    this.pageTransitionDirection.set('none');
+    this.isOverflowing.set(false);
+    this.swipeOffset.set(0);
+    this.isSwipingActive.set(false);
+    this.pendingRender = null;
+    this.lastLoadedUrl = '';
+  }
+
   async onWindowResize(): Promise<void> {
     if (this.resizeTimeout) {
       clearTimeout(this.resizeTimeout);

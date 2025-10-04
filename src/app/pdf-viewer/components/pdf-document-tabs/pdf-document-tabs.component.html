@@ -1,0 +1,28 @@
+<div class="document-tabs">
+  <div class="tabs-container">
+    <div class="tabs-scroll">
+      @for (doc of pdfDocuments(); track doc.id; let i = $index) {
+        <button
+          class="tab-chip"
+          [class.active]="activeDocumentIndex() === i"
+          [class.loading]="doc.isLoading"
+          [class.error]="doc.error"
+          (click)="switchTo(i)"
+          [title]="doc.name"
+        >
+          <span class="tab-number">{{ i + 1 }}</span>
+          <span class="tab-name">{{ doc.name }}</span>
+          @if (doc.isLoading) {
+            <span class="tab-status loading-spinner"></span>
+          }
+          @if (doc.error) {
+            <span class="tab-status error-icon">⚠️</span>
+          }
+          @if (doc.isLoaded && !doc.error) {
+            <span class="tab-pages">{{ doc.totalPages }}p</span>
+          }
+        </button>
+      }
+    </div>
+  </div>
+</div>

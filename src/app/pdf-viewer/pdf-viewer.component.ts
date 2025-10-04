@@ -4,12 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { Subscription } from 'rxjs';
 
+import { PdfControlsBarComponent } from './components/pdf-controls-bar/pdf-controls-bar.component';
+import { PdfDocumentTabsComponent } from './components/pdf-document-tabs/pdf-document-tabs.component';
 import { PdfViewerStore } from './pdf-viewer.store';
 
 @Component({
   selector: 'app-pdf-viewer',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, PdfControlsBarComponent, PdfDocumentTabsComponent],
   templateUrl: './pdf-viewer.component.html',
   styleUrls: ['./pdf-viewer.component.scss'],
   providers: [PdfViewerStore]
@@ -149,48 +151,6 @@ export class PdfViewerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   async loadPdfFromData(data: ArrayBuffer, fileName: string = 'Documento'): Promise<void> {
     await this.store.loadPdfFromData(data, fileName);
-  }
-
-  switchToDocument(index: number): void {
-    this.store.switchToDocument(index);
-  }
-
-  previousPage(): void {
-    this.store.previousPage();
-  }
-
-  nextPage(): void {
-    this.store.nextPage();
-  }
-
-  goToPage(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const pageNumber = parseInt(input.value, 10);
-
-    if (isNaN(pageNumber)) {
-      input.value = this.currentPage().toString();
-      return;
-    }
-
-    const validPage = Math.max(1, Math.min(pageNumber, this.totalPages()));
-    input.value = validPage.toString();
-    this.store.goToPage(validPage);
-  }
-
-  zoomIn(): void {
-    this.store.zoomIn();
-  }
-
-  zoomOut(): void {
-    this.store.zoomOut();
-  }
-
-  resetZoom(): void {
-    this.store.resetZoom();
-  }
-
-  fitToWidth(): void {
-    this.store.fitToWidth();
   }
 
   onTouchStart(event: TouchEvent): void {
