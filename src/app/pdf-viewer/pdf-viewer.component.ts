@@ -58,6 +58,8 @@ export class PdfViewerComponent implements OnInit, OnDestroy {
   pdfLoaded = signal(false);
   showInstructions = signal(false);
   pageTransitionDirection = signal<'forward' | 'backward' | 'none'>('none');
+  // Quando o canvas excede o container, habilitamos scroll nativo e desativamos swipe
+  isOverflowing = signal(false);
   
   // Swipe avançado com feedback visual
   swipeOffset = signal(0); // Offset atual do arrasto (px)
@@ -759,6 +761,22 @@ export class PdfViewerComponent implements OnInit, OnDestroy {
       container.innerHTML = '';
       container.appendChild(canvas);
 
+      // Após inserir, verificar se canvas excede o container
+      // Se exceder, habilitar scroll nativo no container (overflow auto)
+      // e marcar isOverflowing = true para desativar swipe
+      requestAnimationFrame(() => {
+        try {
+          const containerRect = container.getBoundingClientRect();
+          const canvasRect = canvas.getBoundingClientRect();
+          const overflows = canvasRect.width > containerRect.width || canvasRect.height > containerRect.height;
+          this.isOverflowing.set(overflows);
+          container.style.overflow = overflows ? 'auto' : 'hidden';
+          // Quando há overflow, permitir pan horizontal e vertical com touch
+          // Se não há overflow, priorizamos os gestos verticais e swipe
+          container.style.touchAction = overflows ? 'pan-x pan-y' : 'pan-y';
+        } catch {}
+      });
+
       this.currentPage.set(pageNumber);
       this.updateUrlWithCurrentPage(pageNumber);
     } catch (error) {
@@ -910,6 +928,8 @@ export class PdfViewerComponent implements OnInit, OnDestroy {
 
   onTouchMove(event: TouchEvent) {
     if (!this.isSwipingActive()) return;
+    // Se está overflowando (scroll nativo habilitado), não processar swipe
+    if (this.isOverflowing()) return;
     
     const touch = event.changedTouches[0];
     const currentX = touch.clientX;
@@ -947,6 +967,12 @@ export class PdfViewerComponent implements OnInit, OnDestroy {
 
   onTouchEnd(event: TouchEvent) {
     if (!this.isSwipingActive()) return;
+    // Se está overflowando (scroll nativo habilitado), não processar swipe
+    if (this.isOverflowing()) {
+      this.isSwipingActive.set(false);
+      this.swipeOffset.set(0);
+      return;
+    }
     
     const touch = event.changedTouches[0];
     const touchEndX = touch.clientX;
