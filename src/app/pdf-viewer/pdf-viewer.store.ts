@@ -562,6 +562,7 @@ export class PdfViewerStore {
             console.log('[PDF Viewer] Auto-fit scale calculated:', {
               containerWidth: autoFitResult.containerWidth,
               availableWidth: autoFitResult.availableWidth,
+              horizontalPadding: autoFitResult.horizontalPadding,
               pdfWidth: autoFitResult.pdfWidth,
               calculatedScale,
               finalScale: scale,
