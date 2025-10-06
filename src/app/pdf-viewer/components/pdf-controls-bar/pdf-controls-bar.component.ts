@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 import { PdfViewerStore } from '../../pdf-viewer.store';
@@ -18,6 +18,26 @@ export class PdfControlsBarComponent {
   readonly totalPages = this.store.totalPages;
   readonly scale = this.store.scale;
   readonly isAutoFitDifferent = this.store.isAutoFitDifferent;
+  readonly autoFitScale = this.store.autoFitScale;
+
+  readonly zoomPercent = computed(() => {
+    const currentScale = this.scale();
+    const autoFit = this.autoFitScale();
+
+    if (!autoFit || autoFit <= 0) {
+      return currentScale * 100;
+    }
+
+    return (currentScale / autoFit) * 100;
+  });
+
+  readonly canResetZoom = computed(() => {
+    const autoFit = this.autoFitScale();
+    if (!autoFit || autoFit <= 0) {
+      return false;
+    }
+    return Math.abs(this.scale() - autoFit) > 0.01;
+  });
 
   resetViewer(): void {
     this.store.resetViewer();
@@ -31,20 +51,11 @@ export class PdfControlsBarComponent {
     this.store.nextPage();
   }
 
-  zoomIn(): void {
-    this.store.zoomIn();
-  }
-
-  zoomOut(): void {
-    this.store.zoomOut();
-  }
-
-  resetZoom(): void {
+  onZoomLevelClick(): void {
+    if (!this.canResetZoom()) {
+      return;
+    }
     this.store.resetZoom();
-  }
-
-  fitToWidth(): void {
-    void this.store.fitToWidth();
   }
 
   onPageSubmit(event: Event): void {

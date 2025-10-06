@@ -218,14 +218,30 @@
     font-weight: 600;
     color: var(--placeholder-color);
     cursor: pointer;
-    transition: filter var(--transition-fast);
+    transition: filter var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
     user-select: none;
     white-space: nowrap;
     min-width: 50px;
     text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 
-    &:hover {
+    &:not(:disabled):hover {
       filter: brightness(1.1);
+    }
+
+    &:disabled {
+      cursor: default;
+      filter: none;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.6);
+      border-color: rgba(255, 215, 0, 0.4);
+    }
+
+    &--active {
+      background: var(--background-color);
+      color: var(--placeholder-color);
     }
 
     @media (max-width: 768px) {

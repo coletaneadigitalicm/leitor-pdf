@@ -394,7 +394,7 @@
   width: 100%;
   box-sizing: border-box;
   position: relative;
-  touch-action: pan-y; // Permite scroll vertical, previne zoom pinch
+  touch-action: pan-y; // Permite scroll vertical e delega pinch personalizado via pointer events
   
   // Variável CSS para o offset do swipe
   --swipe-offset: 0;

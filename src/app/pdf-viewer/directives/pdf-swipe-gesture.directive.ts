@@ -9,18 +9,28 @@ import { PdfViewerStore } from '../pdf-viewer.store';
 export class PdfSwipeGestureDirective {
   constructor(private readonly store: PdfViewerStore) {}
 
-  @HostListener('touchstart', ['$event'])
-  onTouchStart(event: TouchEvent): void {
-    this.store.onTouchStart(event);
+  @HostListener('pointerdown', ['$event'])
+  onPointerDown(event: PointerEvent): void {
+    this.store.onPointerDown(event);
   }
 
-  @HostListener('touchmove', ['$event'])
-  onTouchMove(event: TouchEvent): void {
-    this.store.onTouchMove(event);
+  @HostListener('pointermove', ['$event'])
+  onPointerMove(event: PointerEvent): void {
+    this.store.onPointerMove(event);
   }
 
-  @HostListener('touchend', ['$event'])
-  onTouchEnd(event: TouchEvent): void {
-    this.store.onTouchEnd(event);
+  @HostListener('pointerup', ['$event'])
+  onPointerUp(event: PointerEvent): void {
+    this.store.onPointerUp(event);
+  }
+
+  @HostListener('pointercancel', ['$event'])
+  onPointerCancel(event: PointerEvent): void {
+    this.store.onPointerCancel(event);
+  }
+
+  @HostListener('pointerleave', ['$event'])
+  onPointerLeave(event: PointerEvent): void {
+    this.store.onPointerCancel(event);
   }
 }

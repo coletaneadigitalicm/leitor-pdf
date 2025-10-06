@@ -4,6 +4,25 @@ import { PdfRendererService } from './services/pdf-renderer.service';
 import { PdfUrlParser } from './utils/pdf-url-parser';
 import { PdfAutoFitCalculator } from './utils/pdf-auto-fit-calculator';
 
+interface PointerInfo {
+  x: number;
+  y: number;
+  pointerType: string;
+}
+
+interface PinchViewportFocus {
+  pdfX: number;
+  pdfY: number;
+  pdfWidth: number;
+  pdfHeight: number;
+  pdfXRatio: number;
+  pdfYRatio: number;
+  viewportOffsetX: number;
+  viewportOffsetY: number;
+  viewportOffsetXRatio: number;
+  viewportOffsetYRatio: number;
+}
+
 export interface PdfDocument {
   id: string;
   url: string;
@@ -57,6 +76,22 @@ export class PdfViewerStore {
   private devicePixelRatio = 1;
   private pdfContainer?: HTMLDivElement;
   private pendingRender: { pageNumber: number; applyAutoFit: boolean } | null = null;
+  private currentCanvas?: HTMLCanvasElement;
+  private lastRenderedScale = 1;
+  private previousTouchAction = '';
+
+  private readonly MIN_SCALE = 0.5;
+  private readonly MAX_SCALE = 9.0;
+
+  private activePointers = new Map<number, PointerInfo>();
+  private isPinching = false;
+  private pinchInitialDistance = 0;
+  private pinchInitialScale = 1;
+  private lastScrollDebugLog = 0;
+  private pinchLastCenter: { x: number; y: number } | null = null;
+  private pinchCurrentFocus: PinchViewportFocus | null = null;
+  private pendingPinchViewportFocus: PinchViewportFocus | null = null;
+  private pinchStartTime = 0;
 
   constructor(private readonly renderer: PdfRendererService) {
     this.pdfjsReady = this.renderer.getPdfJsReady();
@@ -81,6 +116,14 @@ export class PdfViewerStore {
     }
     this.pdfContainer = undefined;
     this.pendingRender = null;
+    this.currentCanvas = undefined;
+    this.activePointers.clear();
+    this.isPinching = false;
+    this.lastRenderedScale = 1;
+    this.pinchLastCenter = null;
+    this.pinchCurrentFocus = null;
+    this.pendingPinchViewportFocus = null;
+    this.pinchStartTime = 0;
   }
 
   setPdfContainer(container: HTMLDivElement): void {
@@ -437,7 +480,7 @@ export class PdfViewerStore {
 
       const arrayBuffer = await file.arrayBuffer();
 
-  const pdfDoc = await this.renderer.loadDocumentFromData(arrayBuffer);
+      const pdfDoc = await this.renderer.loadDocumentFromData(arrayBuffer);
 
       this.pdfDocuments.update(currentDocs => {
         const newDocs = [...currentDocs];
@@ -490,7 +533,7 @@ export class PdfViewerStore {
   async loadPdfFromData(data: ArrayBuffer, fileName: string = 'Documento'): Promise<void> {
     await this.pdfjsReady;
 
-  const pdfDoc = await this.renderer.loadDocumentFromData(data);
+    const pdfDoc = await this.renderer.loadDocumentFromData(data);
 
     const doc: PdfDocument = {
       id: `pdf-upload-${Date.now()}`,
@@ -589,6 +632,10 @@ export class PdfViewerStore {
 
       container.innerHTML = '';
       container.appendChild(canvas);
+      this.currentCanvas = canvas;
+      this.lastRenderedScale = appliedScale;
+      canvas.style.transform = '';
+      canvas.style.transformOrigin = '';
 
       requestAnimationFrame(() => {
         try {
@@ -611,25 +658,43 @@ export class PdfViewerStore {
           const newMaxScrollLeft = Math.max(0, newScrollW - newClientW);
           const newMaxScrollTop = Math.max(0, newScrollH - newClientH);
 
-          if (hOverflow) {
-            if (hadHOverflow) {
-              container.scrollLeft = prevScrollLeftPct * newMaxScrollLeft;
-            } else {
-              container.scrollLeft = newMaxScrollLeft / 2;
-            }
+          const focusToApply = this.pendingPinchViewportFocus;
+          if (focusToApply && newScrollW > 0 && newScrollH > 0) {
+            this.applyPendingPinchFocus(container, focusToApply, {
+              appliedScale,
+              newScrollWidth: newScrollW,
+              newScrollHeight: newScrollH,
+              newMaxScrollLeft,
+              newMaxScrollTop,
+              newClientWidth: newClientW,
+              newClientHeight: newClientH
+            });
+            this.pendingPinchViewportFocus = null;
           } else {
-            container.scrollLeft = 0;
-          }
+            this.pendingPinchViewportFocus = null;
 
-          if (vOverflow) {
-            if (hadVOverflow) {
-              container.scrollTop = prevScrollTopPct * newMaxScrollTop;
+            if (hOverflow) {
+              if (hadHOverflow) {
+                container.scrollLeft = prevScrollLeftPct * newMaxScrollLeft;
+              } else {
+                container.scrollLeft = newMaxScrollLeft / 2;
+              }
+            } else {
+              container.scrollLeft = 0;
+            }
+
+            if (vOverflow) {
+              if (hadVOverflow) {
+                container.scrollTop = prevScrollTopPct * newMaxScrollTop;
+              } else {
+                container.scrollTop = 0;
+              }
             } else {
               container.scrollTop = 0;
             }
-          } else {
-            container.scrollTop = 0;
           }
+
+          this.logScrollState('post-render', true);
         } catch {}
       });
 
@@ -663,18 +728,26 @@ export class PdfViewerStore {
   }
 
   zoomIn(): void {
-    this.scale.update(s => Math.min(s + 0.25, 9.0));
+    this.scale.update(s => Math.min(s + 0.25, this.MAX_SCALE));
     this.renderPage(this.currentPage());
   }
 
   zoomOut(): void {
-    this.scale.update(s => Math.max(s - 0.25, 0.5));
+    this.scale.update(s => Math.max(s - 0.25, this.MIN_SCALE));
     this.renderPage(this.currentPage());
   }
 
   resetZoom(): void {
-    this.scale.set(1.0);
-    this.renderPage(this.currentPage());
+    const autoFit = this.autoFitScale();
+
+    if (autoFit && autoFit > 0) {
+      this.scale.set(autoFit);
+      this.pendingPinchViewportFocus = null;
+      this.renderPage(this.currentPage());
+      return;
+    }
+
+    void this.fitToWidth();
   }
 
   async fitToWidth(): Promise<void> {
@@ -689,22 +762,106 @@ export class PdfViewerStore {
     }
   }
 
-  onTouchStart(event: TouchEvent): void {
-    const touch = event.changedTouches[0];
-    this.touchStartX = touch.clientX;
-    this.touchStartY = touch.clientY;
+  onPointerDown(event: PointerEvent): void {
+    if (!this.isPointerSupported(event)) {
+      return;
+    }
+
+    this.trackPointer(event);
+
+    const target = event.target as HTMLElement | null;
+    if (target?.setPointerCapture) {
+      try {
+        target.setPointerCapture(event.pointerId);
+      } catch {}
+    }
+
+    if (this.activePointers.size === 1) {
+      this.beginSwipe(event);
+      return;
+    }
+
+    if (this.activePointers.size === 2) {
+      this.beginPinch();
+    }
+  }
+
+  onPointerMove(event: PointerEvent): void {
+    if (!this.activePointers.has(event.pointerId)) {
+      return;
+    }
+
+    this.trackPointer(event);
+
+    if (this.isPinching) {
+      event.preventDefault();
+      this.handlePinchMove();
+      return;
+    }
+
+    if (this.activePointers.size >= 2) {
+      this.beginPinch();
+      return;
+    }
+
+    if (this.isSwipingActive()) {
+      this.handleSwipeMove(event);
+    }
+  }
+
+  onPointerUp(event: PointerEvent): void {
+    if (!this.activePointers.has(event.pointerId)) {
+      return;
+    }
+
+    if (this.isPinching) {
+      this.activePointers.delete(event.pointerId);
+      if (this.activePointers.size < 2) {
+        this.endPinch(true);
+      }
+      return;
+    }
+
+    if (this.isSwipingActive()) {
+      this.handleSwipeEnd(event);
+    }
+
+    this.activePointers.delete(event.pointerId);
+  }
+
+  onPointerCancel(event: PointerEvent): void {
+    if (!this.activePointers.has(event.pointerId)) {
+      return;
+    }
+
+    this.activePointers.delete(event.pointerId);
+
+    if (this.isPinching) {
+      this.endPinch(true);
+      return;
+    }
+
+    this.cancelSwipe();
+    this.isSwipingActive.set(false);
+    this.swipeOffset.set(0);
+  }
+
+  private beginSwipe(event: PointerEvent): void {
+    this.isPinching = false;
+    this.touchStartX = event.clientX;
+    this.touchStartY = event.clientY;
     this.touchStartTime = Date.now();
     this.isSwipingActive.set(true);
     this.swipeOffset.set(0);
   }
 
-  onTouchMove(event: TouchEvent): void {
-    if (!this.isSwipingActive()) return;
-    if (this.isOverflowing()) return;
+  private handleSwipeMove(event: PointerEvent): void {
+    if (this.isOverflowing()) {
+      return;
+    }
 
-    const touch = event.changedTouches[0];
-    const currentX = touch.clientX;
-    const currentY = touch.clientY;
+    const currentX = event.clientX;
+    const currentY = event.clientY;
 
     const deltaX = currentX - this.touchStartX;
     const deltaY = currentY - this.touchStartY;
@@ -730,23 +887,25 @@ export class PdfViewerStore {
     }
   }
 
-  onTouchEnd(event: TouchEvent): void {
-    if (!this.isSwipingActive()) return;
+  private handleSwipeEnd(event: PointerEvent): void {
+    if (!this.isSwipingActive()) {
+      return;
+    }
+
     if (this.isOverflowing()) {
       this.isSwipingActive.set(false);
       this.swipeOffset.set(0);
       return;
     }
 
-    const touch = event.changedTouches[0];
-    const touchEndX = touch.clientX;
-    const touchEndY = touch.clientY;
+    const touchEndX = event.clientX;
+    const touchEndY = event.clientY;
     const touchEndTime = Date.now();
 
     const horizontalDistance = Math.abs(touchEndX - this.touchStartX);
     const verticalDistance = Math.abs(touchEndY - this.touchStartY);
     const duration = touchEndTime - this.touchStartTime;
-    const velocity = horizontalDistance / duration;
+    const velocity = duration > 0 ? horizontalDistance / duration : 0;
 
     if (verticalDistance > horizontalDistance * 0.5) {
       this.cancelSwipe();
@@ -787,6 +946,424 @@ export class PdfViewerStore {
       this.isSwipingActive.set(false);
       this.swipeOffset.set(0);
     }, 300);
+  }
+
+  private beginPinch(): void {
+    const pointers = this.getTouchLikePointers();
+    if (pointers.length < 2) {
+      return;
+    }
+
+    const initialDistance = this.calculateDistance(pointers[0], pointers[1]);
+    if (initialDistance <= 0) {
+      return;
+    }
+
+    this.isPinching = true;
+    this.isSwipingActive.set(false);
+    this.swipeOffset.set(0);
+
+    this.pinchInitialDistance = initialDistance;
+    this.pinchInitialScale = this.scale();
+    this.pinchLastCenter = null;
+    this.pinchCurrentFocus = null;
+    this.pendingPinchViewportFocus = null;
+    this.pinchStartTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+    if (this.pdfContainer) {
+      this.previousTouchAction = this.pdfContainer.style.touchAction;
+      this.pdfContainer.style.touchAction = 'none';
+    }
+
+    this.logScrollState('begin-pinch', true);
+  }
+
+  private handlePinchMove(): void {
+    const pointers = this.getTouchLikePointers();
+    if (pointers.length < 2 || this.pinchInitialDistance <= 0) {
+      return;
+    }
+
+    const distance = this.calculateDistance(pointers[0], pointers[1]);
+    if (distance <= 0) {
+      return;
+    }
+
+    const scaleFactor = distance / this.pinchInitialDistance;
+    const targetScale = this.clampScale(this.pinchInitialScale * scaleFactor);
+    const center = this.calculateCenter(pointers[0], pointers[1]);
+
+    this.scale.set(targetScale);
+    this.updatePinchPreview(targetScale, center);
+  }
+
+  private endPinch(commit: boolean): void {
+    if (!this.isPinching) {
+      return;
+    }
+
+    this.isPinching = false;
+
+    let applyAutoFitOnRender = false;
+
+    if (commit) {
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const pinchDuration = this.pinchStartTime > 0 ? now - this.pinchStartTime : Number.POSITIVE_INFINITY;
+      const finalScale = this.scale();
+
+      if (this.shouldSnapToAutoFitOnPinchEnd(finalScale, pinchDuration)) {
+        applyAutoFitOnRender = true;
+        this.pendingPinchViewportFocus = null;
+      } else if (this.pinchCurrentFocus) {
+        this.pendingPinchViewportFocus = this.pinchCurrentFocus;
+      } else {
+        this.pendingPinchViewportFocus = null;
+      }
+    } else {
+      this.pendingPinchViewportFocus = null;
+    }
+
+    if (this.pdfContainer) {
+      const fallback = this.isOverflowing() ? 'pan-x pan-y' : 'pan-y';
+      this.pdfContainer.style.touchAction = this.previousTouchAction || fallback;
+      this.previousTouchAction = '';
+    }
+
+    if (this.currentCanvas) {
+      this.currentCanvas.style.transform = '';
+      this.currentCanvas.style.transformOrigin = '';
+    }
+
+    if (commit) {
+      const logReason = applyAutoFitOnRender ? 'end-pinch-autofit' : 'end-pinch-commit';
+      this.logScrollState(logReason, true);
+      void this.renderPage(this.currentPage(), applyAutoFitOnRender);
+    } else {
+      this.scale.set(this.pinchInitialScale);
+      this.logScrollState('end-pinch-cancel', true);
+    }
+
+    this.pinchInitialDistance = 0;
+    this.pinchCurrentFocus = null;
+    this.pinchLastCenter = null;
+    this.pinchStartTime = 0;
+  }
+
+  private shouldSnapToAutoFitOnPinchEnd(finalScale: number, durationMs: number): boolean {
+    const autoFit = this.autoFitScale();
+    if (!autoFit || !(autoFit > 0) || !(finalScale > 0) || !(this.pinchInitialScale > 0)) {
+      return false;
+    }
+
+    if (finalScale >= this.pinchInitialScale) {
+      return false;
+    }
+
+    const dropRatio = finalScale / this.pinchInitialScale;
+    const isQuickGesture = Number.isFinite(durationMs) && durationMs <= 350;
+    const scaledOutAggressively = dropRatio <= 0.85;
+    const nearOrBelowAutoFit = finalScale <= autoFit * 1.05;
+
+    return isQuickGesture && scaledOutAggressively && nearOrBelowAutoFit;
+  }
+
+  private updatePinchPreview(scale: number, center: { x: number; y: number } | null): void {
+    const canvas = this.currentCanvas;
+    if (!canvas) {
+      return;
+    }
+
+    const baseScale = this.lastRenderedScale || 1;
+    const ratio = baseScale > 0 ? scale / baseScale : 1;
+
+    if (center && Number.isFinite(center.x) && Number.isFinite(center.y)) {
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        const originX = ((center.x - rect.left) / rect.width) * 100;
+        const originY = ((center.y - rect.top) / rect.height) * 100;
+        canvas.style.transformOrigin = `${originX}% ${originY}%`;
+      }
+    } else {
+      canvas.style.transformOrigin = '50% 50%';
+    }
+
+    canvas.style.transform = `scale(${ratio})`;
+
+    if (center) {
+      this.pinchLastCenter = center;
+      const focus = this.computePinchFocus(center, ratio);
+      if (focus) {
+        this.pinchCurrentFocus = focus;
+      }
+    }
+
+    this.logScrollState('pinch-preview');
+  }
+
+  private trackPointer(event: PointerEvent): void {
+    if (!this.isPointerSupported(event)) {
+      return;
+    }
+
+    this.activePointers.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+      pointerType: event.pointerType
+    });
+  }
+
+  private getTouchLikePointers(): PointerInfo[] {
+    return Array.from(this.activePointers.values()).filter(pointer => pointer.pointerType === 'touch' || pointer.pointerType === 'pen');
+  }
+
+  private calculateDistance(a: PointerInfo, b: PointerInfo): number {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return Math.hypot(dx, dy);
+  }
+
+  private calculateCenter(a: PointerInfo, b: PointerInfo): { x: number; y: number } {
+    return {
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2
+    };
+  }
+
+  private clampScale(value: number): number {
+    return Math.max(this.MIN_SCALE, Math.min(value, this.MAX_SCALE));
+  }
+
+  private isPointerSupported(event: PointerEvent): boolean {
+    return event.pointerType === 'touch' || event.pointerType === 'pen';
+  }
+
+  private computePinchFocus(center: { x: number; y: number }, displayScaleRatio: number): PinchViewportFocus | null {
+    if (!this.pdfContainer || !this.currentCanvas) {
+      return null;
+    }
+
+    const container = this.pdfContainer;
+    const canvas = this.currentCanvas;
+    const baseScale = this.lastRenderedScale;
+    const deviceScale = this.devicePixelRatio || 1;
+    const ratio = displayScaleRatio > 0 ? displayScaleRatio : 1;
+
+    if (!(baseScale > 0) || !(deviceScale > 0)) {
+      return null;
+    }
+
+    const rect = container.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+
+    const offsetXFromContainer = center.x - rect.left;
+    const offsetYFromContainer = center.y - rect.top;
+
+    const centerWithinCanvasX = center.x - canvasRect.left;
+    const centerWithinCanvasY = center.y - canvasRect.top;
+
+    if (!Number.isFinite(centerWithinCanvasX) || !Number.isFinite(centerWithinCanvasY)) {
+      return null;
+    }
+
+    const clampedCanvasOffsetX = this.clampValue(centerWithinCanvasX, 0, canvasRect.width);
+    const clampedCanvasOffsetY = this.clampValue(centerWithinCanvasY, 0, canvasRect.height);
+
+    const baseOffsetX = clampedCanvasOffsetX / ratio;
+    const baseOffsetY = clampedCanvasOffsetY / ratio;
+
+    const pdfWidth = canvas.width / (deviceScale * baseScale);
+    const pdfHeight = canvas.height / (deviceScale * baseScale);
+
+    if (!(pdfWidth > 0) || !(pdfHeight > 0)) {
+      return null;
+    }
+
+    const pdfX = (container.scrollLeft + baseOffsetX) / baseScale;
+    const pdfY = (container.scrollTop + baseOffsetY) / baseScale;
+    const pdfXRatio = this.clampValue(pdfWidth > 0 ? pdfX / pdfWidth : 0, 0, 1);
+    const pdfYRatio = this.clampValue(pdfHeight > 0 ? pdfY / pdfHeight : 0, 0, 1);
+
+    const clientWidth = container.clientWidth || 1;
+    const clientHeight = container.clientHeight || 1;
+
+    const clampedViewportOffsetX = this.clampValue(offsetXFromContainer, 0, clientWidth);
+    const clampedViewportOffsetY = this.clampValue(offsetYFromContainer, 0, clientHeight);
+
+    return {
+      pdfX: this.clampValue(pdfX, 0, pdfWidth),
+      pdfY: this.clampValue(pdfY, 0, pdfHeight),
+      pdfWidth,
+      pdfHeight,
+      pdfXRatio,
+      pdfYRatio,
+      viewportOffsetX: clampedViewportOffsetX,
+      viewportOffsetY: clampedViewportOffsetY,
+      viewportOffsetXRatio: this.clampValue(clampedViewportOffsetX / clientWidth, 0, 1),
+      viewportOffsetYRatio: this.clampValue(clampedViewportOffsetY / clientHeight, 0, 1)
+    };
+  }
+
+  private applyPendingPinchFocus(
+    container: HTMLDivElement,
+    focus: PinchViewportFocus,
+    metrics: {
+      appliedScale: number;
+      newScrollWidth: number;
+      newScrollHeight: number;
+      newMaxScrollLeft: number;
+      newMaxScrollTop: number;
+      newClientWidth: number;
+      newClientHeight: number;
+    }
+  ): void {
+    const {
+      appliedScale,
+      newScrollWidth,
+      newScrollHeight,
+      newMaxScrollLeft,
+      newMaxScrollTop,
+      newClientWidth,
+      newClientHeight
+    } = metrics;
+
+    if (!(appliedScale > 0)) {
+      return;
+    }
+
+    const contentWidth = focus.pdfWidth * appliedScale;
+    const contentHeight = focus.pdfHeight * appliedScale;
+
+    const ratioBasedScrollLeft = contentWidth > newClientWidth
+      ? focus.pdfXRatio * contentWidth - focus.viewportOffsetXRatio * newClientWidth
+      : 0;
+
+    const ratioBasedScrollTop = contentHeight > newClientHeight
+      ? focus.pdfYRatio * contentHeight - focus.viewportOffsetYRatio * newClientHeight
+      : 0;
+
+    const absoluteScrollLeft = focus.pdfX * appliedScale - focus.viewportOffsetX;
+    const absoluteScrollTop = focus.pdfY * appliedScale - focus.viewportOffsetY;
+
+    const clampedRatioLeft = Number.isFinite(ratioBasedScrollLeft)
+      ? this.clampValue(ratioBasedScrollLeft, 0, newMaxScrollLeft)
+      : null;
+    const clampedAbsoluteLeft = Number.isFinite(absoluteScrollLeft)
+      ? this.clampValue(absoluteScrollLeft, 0, newMaxScrollLeft)
+      : null;
+
+    const clampedRatioTop = Number.isFinite(ratioBasedScrollTop)
+      ? this.clampValue(ratioBasedScrollTop, 0, newMaxScrollTop)
+      : null;
+    const clampedAbsoluteTop = Number.isFinite(absoluteScrollTop)
+      ? this.clampValue(absoluteScrollTop, 0, newMaxScrollTop)
+      : null;
+
+    container.scrollLeft = this.mixScrollTarget(clampedRatioLeft, clampedAbsoluteLeft, newMaxScrollLeft);
+    container.scrollTop = this.mixScrollTarget(clampedRatioTop, clampedAbsoluteTop, newMaxScrollTop);
+  }
+
+  private mixScrollTarget(
+    ratioValue: number | null,
+    absoluteValue: number | null,
+    maxScroll: number
+  ): number {
+    const boundedMax = Number.isFinite(maxScroll) && maxScroll > 0 ? maxScroll : 0;
+
+    const safeClamped = (value: number | null): number | null => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return null;
+      }
+      return this.clampValue(value, 0, boundedMax);
+    };
+
+    const ratio = safeClamped(ratioValue);
+    const absolute = safeClamped(absoluteValue);
+
+    if (ratio === null && absolute === null) {
+      return 0;
+    }
+
+    if (ratio === null) {
+      return absolute!;
+    }
+
+    if (absolute === null) {
+      return ratio;
+    }
+
+    const difference = Math.abs(ratio - absolute);
+
+    if (difference <= 4) {
+      return ratio;
+    }
+
+    const tolerance = 24;
+    const fadeRange = 256;
+    const excess = Math.max(0, difference - tolerance);
+    const weight = Math.max(0, 1 - excess / fadeRange);
+
+    return absolute + (ratio - absolute) * weight;
+  }
+
+  private clampValue(value: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) {
+      return min;
+    }
+    if (value < min) {
+      return min;
+    }
+    if (value > max) {
+      return max;
+    }
+    return value;
+  }
+
+  private logScrollState(reason: string, force = false): void {
+    const container = this.pdfContainer;
+    if (!container) {
+      return;
+    }
+
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (!force && now - this.lastScrollDebugLog < 200) {
+      return;
+    }
+    this.lastScrollDebugLog = now;
+
+    const elements: { label: string; element: HTMLElement | null }[] = [
+      { label: 'container', element: container }
+    ];
+
+    let parent = container.parentElement;
+    let level = 1;
+    while (parent && level <= 4) {
+      elements.push({ label: `parent-${level}`, element: parent as HTMLElement });
+      parent = parent.parentElement;
+      level++;
+    }
+
+    for (const entry of elements) {
+      const el = entry.element;
+      if (!el) continue;
+
+      const computed = typeof window !== 'undefined' && window.getComputedStyle
+        ? window.getComputedStyle(el)
+        : null;
+
+      console.log('[PDF Viewer][ScrollDebug]', reason, {
+        target: entry.label,
+        tag: el.tagName,
+        classList: Array.from(el.classList || []),
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        scrollLeft: el.scrollLeft,
+        scrollTop: el.scrollTop,
+        overflowX: computed?.overflowX,
+        overflowY: computed?.overflowY
+      });
+    }
   }
 
   cancelSwipe(): void {
