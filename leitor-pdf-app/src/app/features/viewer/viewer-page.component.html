@@ -1,0 +1,67 @@
+<section class="viewer">
+  <div class="viewer__status" *ngIf="hasError()">
+    <div class="viewer__status-banner viewer__status-banner--error" role="alert">
+      <div class="viewer__status-icon" aria-hidden="true">!</div>
+      <div>
+        <p class="viewer__status-title">Não foi possível carregar o documento.</p>
+        <p class="viewer__status-message">{{ state().error }}</p>
+      </div>
+      <div class="viewer__status-actions">
+        <button type="button" class="ghost" (click)="retry()">Tentar novamente</button>
+        <button type="button" class="ghost ghost--light" (click)="clearError()">Limpar</button>
+      </div>
+    </div>
+  </div>
+
+  <form class="viewer__controls" (ngSubmit)="submitUrl()" novalidate>
+    <label class="viewer__input">
+      <span class="viewer__input-label">Abrir por URL</span>
+      <input
+        type="url"
+        name="documentUrl"
+        [(ngModel)]="urlInput"
+        placeholder="https://exemplo.com/arquivo.pdf"
+        spellcheck="false"
+        autocomplete="off"
+      />
+    </label>
+    <button type="submit" class="primary" [disabled]="!urlInput.trim()">Carregar URL</button>
+    <label class="viewer__upload">
+      <input
+        type="file"
+        accept="application/pdf"
+        (change)="onFileSelected($event)"
+        aria-label="Selecionar PDF local"
+      />
+      <span>Selecionar arquivo</span>
+    </label>
+  </form>
+
+  <div class="viewer__placeholder" *ngIf="state().status === 'idle'">
+    <h2>Selecione um PDF</h2>
+    <p>
+      Informe uma URL com o parâmetro
+      <code>?url=https://seuarquivo.pdf</code>
+      ou suba um arquivo local para iniciar a leitura.
+    </p>
+  </div>
+
+  <div class="viewer__canvas" *ngIf="document() as doc">
+    <ngx-extended-pdf-viewer
+      [src]="doc.sourceType === 'url' ? doc.url : doc.file"
+      [height]="'100%'"
+      [useBrowserLocale]="true"
+      [showSidebarButton]="true"
+      [showFindButton]="true"
+      [zoom]="'auto'"
+      [textLayer]="true"
+      (pdfLoaded)="onPdfLoaded()"
+      (pdfLoadingFailed)="onPdfLoadFailed($event)"
+    />
+
+    <div class="viewer__overlay" *ngIf="isLoading()" aria-live="polite">
+      <div class="viewer__spinner" role="presentation"></div>
+      <p>Carregando documento...</p>
+    </div>
+  </div>
+</section>

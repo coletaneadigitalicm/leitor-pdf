@@ -1,1 +1,2 @@
-// Public barrel for feature areas; populate as feature modules are implemented.
+export * from './home/home.component';
+export * from './viewer/viewer-page.component';

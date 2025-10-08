@@ -1,0 +1,33 @@
+<section class="viewer">
+  <div class="viewer__status" *ngIf="hasError()">
+    <div class="viewer__status-banner viewer__status-banner--error" role="alert">
+      <div class="viewer__status-icon" aria-hidden="true">!</div>
+      <div>
+        <p class="viewer__status-title">Não foi possível carregar o documento.</p>
+        <p class="viewer__status-message">{{ state().error }}</p>
+      </div>
+      <div class="viewer__status-actions">
+        <button type="button" class="ghost" (click)="retry()">Tentar novamente</button>
+        <button type="button" class="ghost ghost--light" (click)="clearError()">Limpar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="viewer__placeholder" *ngIf="state().status === 'idle'">
+    <h2>Selecione um PDF</h2>
+    <p>
+      Informe uma URL com o parâmetro
+      <code>?url=https://seuarquivo.pdf</code>
+      ou suba um arquivo local para iniciar a leitura.
+    </p>
+  </div>
+
+  <div class="viewer__canvas">
+    <ng-content />
+  </div>
+
+  <div class="viewer__overlay" *ngIf="isLoading()" aria-live="polite">
+    <div class="viewer__spinner"></div>
+    <p>Carregando documento...</p>
+  </div>
+</section>
