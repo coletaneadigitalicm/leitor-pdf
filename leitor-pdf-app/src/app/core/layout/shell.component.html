@@ -1,0 +1,26 @@
+<div
+  class="app-shell"
+  [style.background]="backgroundStyle.background"
+  [style.--toolbar-height-desktop.px]="layout.toolbar.height.desktop"
+  [style.--toolbar-height-mobile.px]="layout.toolbar.height.mobile"
+  [style.--content-max-width.px]="layout.contentMaxWidth"
+>
+  <header class="app-toolbar" [style.boxShadow]="layout.toolbar.elevation" role="banner">
+    <div class="app-toolbar__brand">
+      <span class="app-toolbar__badge" aria-hidden="true">Coletânea Digital</span>
+      <div class="app-toolbar__titles">
+        <span class="app-toolbar__eyebrow">Leitor digital</span>
+        <span class="app-toolbar__title">{{ appTitle }}</span>
+      </div>
+    </div>
+    <div class="app-toolbar__actions" role="presentation">
+      <span class="app-toolbar__tag">Versão 2.0</span>
+    </div>
+  </header>
+
+  <main class="app-shell__body">
+    <div class="app-shell__surface">
+      <router-outlet />
+    </div>
+  </main>
+</div>
