@@ -6,7 +6,7 @@
     "start": "ng serve --ssl --host 0.0.0.0",
     "build": "ng build",
     "build:prod": "ng build --configuration production --base-href /leitor-pdf/",
-    "deploy": "ng build --configuration production --base-href /leitor-pdf/ && npx angular-cli-ghpages --dir=dist/pdf-reader/browser",
+    "deploy": "ng build --configuration production --base-href /leitor-pdf/ && npx angular-cli-ghpages --dir=dist/leitor-pdf-app/browser",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "lint": "ng lint",
