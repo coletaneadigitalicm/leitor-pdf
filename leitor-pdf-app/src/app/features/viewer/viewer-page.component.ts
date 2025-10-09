@@ -23,6 +23,7 @@ import {
 import { ViewerStateService } from '../../core/viewer/viewer-state.service';
 import { ViewerDocument } from '../../core/viewer/viewer-state.model';
 import { createInitialViewerState } from '../../core/viewer/viewer-state.util';
+import { ViewerSettingsService } from '../../core/viewer/viewer-settings.service';
 import { DocumentCarouselComponent } from './document-carousel.component';
 
 @Component({
@@ -36,6 +37,7 @@ export class ViewerPageComponent implements OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly viewerState = inject(ViewerStateService);
+  private readonly viewerSettings = inject(ViewerSettingsService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly ngZone = inject(NgZone);
 
@@ -76,12 +78,17 @@ export class ViewerPageComponent implements OnDestroy {
 
   protected readonly hasDocuments: Signal<boolean> = computed(() => this.documents().length > 0);
 
+  protected readonly viewerSettingsSnapshot = toSignal(this.viewerSettings.settings$, {
+    initialValue: this.viewerSettings.snapshot,
+  });
+
   private tapZoneObserver?: MutationObserver;
 
   constructor() {
     this.watchQueryParams();
     this.prefetchBackgroundDocuments();
     this.resetPaginationOnDocumentChange();
+    this.watchViewerSettingsChanges();
   }
 
   protected retry(): void {
@@ -99,6 +106,10 @@ export class ViewerPageComponent implements OnDestroy {
 
     // Para arquivos locais, redefinimos o estado para permitir nova tentativa manual.
     this.viewerState.markDocumentLoading(doc.id);
+  }
+
+  protected togglePageNavigationButtons(): void {
+    this.viewerSettings.togglePageNavigationButtons();
   }
 
   protected clearError(): void {
@@ -139,6 +150,11 @@ export class ViewerPageComponent implements OnDestroy {
 
     if (this.activeDocument()?.id === docId) {
       this.updatePageTapZones();
+      
+      // Adicionar opções ao menu nativo após carregar
+      setTimeout(() => {
+        this.addCustomOptionsToNativeMenu();
+      }, 1000);
     }
   }
 
@@ -252,6 +268,14 @@ export class ViewerPageComponent implements OnDestroy {
     });
   }
 
+  private watchViewerSettingsChanges(): void {
+    effect(() => {
+      // React to viewer settings changes
+      this.viewerSettingsSnapshot();
+      this.updatePageTapZones();
+    });
+  }
+
   private updatePageTapZones(): void {
     requestAnimationFrame(() => {
       const host = this.pdfViewerRef?.nativeElement;
@@ -311,6 +335,7 @@ export class ViewerPageComponent implements OnDestroy {
     const rect = wrapper.getBoundingClientRect();
     const width = Math.max(rect.width * 0.28, 120);
     const height = Math.max(rect.height * 0.28, 120);
+    const settings = this.viewerSettingsSnapshot();
 
     zone.style.position = 'absolute';
     zone.style.width = `${width}px`;
@@ -318,10 +343,23 @@ export class ViewerPageComponent implements OnDestroy {
     zone.style.minWidth = `${width}px`;
     zone.style.minHeight = `${height}px`;
     zone.style.border = 'none';
-    zone.style.background = 'transparent';
     zone.style.padding = '0';
     zone.style.cursor = 'pointer';
     zone.style.zIndex = '2';
+
+    // Apply visibility settings
+    if (settings.showPageNavigationButtons) {
+      zone.style.display = 'block';
+      zone.style.pointerEvents = 'auto';
+      zone.style.background = 'rgba(0, 0, 0, 0.1)';
+      zone.style.borderRadius = '8px';
+      zone.style.transition = 'background-color 150ms ease-in-out';
+      zone.classList.add('viewer__page-tap-zone--visible');
+    } else {
+      zone.style.display = 'none';
+      zone.style.pointerEvents = 'none';
+      zone.classList.remove('viewer__page-tap-zone--visible');
+    }
 
     const horizontal = zone.dataset['viewerTapZoneHorizontal'] as 'left' | 'right' | undefined;
     const vertical = zone.dataset['viewerTapZoneVertical'] as 'top' | 'bottom' | undefined;
@@ -403,6 +441,233 @@ export class ViewerPageComponent implements OnDestroy {
 
     this.currentPage -= 1;
     console.debug('[viewer] previous page', { page: this.currentPage });
+  }
+
+  private addCustomOptionsToNativeMenu(): void {
+    const host = this.pdfViewerRef?.nativeElement;
+    if (!host) return;
+
+    // Aguardar o PDF viewer estar completamente carregado
+    const checkForMenu = () => {
+      const toolbar = host.querySelector('#toolbarContainer') || host.querySelector('.toolbar');
+      const secondaryToolbar = host.querySelector('#secondaryToolbar') || host.querySelector('.secondaryToolbar');
+      
+      if (toolbar || secondaryToolbar) {
+        console.log('[PDF Viewer] Toolbar encontrado:', toolbar);
+        console.log('[PDF Viewer] Estrutura do toolbar:', toolbar?.innerHTML);
+        this.injectCustomMenuItems(host);
+      } else {
+        console.log('[PDF Viewer] Aguardando toolbar...');
+        // Tentar novamente após um tempo
+        setTimeout(checkForMenu, 500);
+      }
+    };
+
+    checkForMenu();
+  }
+
+  private injectCustomMenuItems(host: HTMLElement): void {
+    // Tentar encontrar o menu de configurações existente
+    const existingMenu = host.querySelector('#viewBookmark') || 
+                        host.querySelector('[title*="Propriedades"]') ||
+                        host.querySelector('[title*="Properties"]') ||
+                        host.querySelector('.toolbarButton[title*="Configurações"]');
+
+    if (existingMenu) {
+      // Adicionar nossos botões ao lado do menu existente
+      this.addCustomButtonsToToolbar(host);
+    } else {
+      // Criar um novo botão de menu
+      this.createCustomMenuButton(host);
+    }
+  }
+
+  private addCustomButtonsToToolbar(host: HTMLElement): void {
+    const toolbar = host.querySelector('#toolbarContainer') || host.querySelector('.toolbar');
+    if (!toolbar) return;
+
+    // Verificar se já adicionamos o botão
+    if (toolbar.querySelector('.viewer__custom-nav-button')) return;
+
+    console.log('[PDF Viewer] Procurando elementos de referência...');
+
+    // Encontrar elementos de referência para posicionamento
+    const hamburgerButton = toolbar.querySelector('#sidebarToggle') || 
+                           toolbar.querySelector('[title*="Sidebar"]') ||
+                           toolbar.querySelector('[title*="Menu"]') ||
+                           toolbar.querySelector('.toolbarButton[title*="Toggle"]') ||
+                           toolbar.querySelector('button[aria-label*="sidebar"]') ||
+                           toolbar.querySelector('button[aria-label*="menu"]');
+
+    const searchButton = toolbar.querySelector('#viewFind') || 
+                        toolbar.querySelector('#secondaryFind') ||
+                        toolbar.querySelector('[title*="Pesquisar"]') ||
+                        toolbar.querySelector('[title*="Search"]') ||
+                        toolbar.querySelector('[title*="Find"]') ||
+                        toolbar.querySelector('.toolbarButton[title*="Find"]') ||
+                        toolbar.querySelector('button[aria-label*="find"]') ||
+                        toolbar.querySelector('button[aria-label*="search"]') ||
+                        toolbar.querySelector('pdf-shy-button[l10nid*="find"]') ||
+                        toolbar.querySelector('pdf-shy-button[l10nid*="search"]') ||
+                        toolbar.querySelector('button[id*="Find"]') ||
+                        toolbar.querySelector('button[id*="Search"]');
+
+    console.log('[PDF Viewer] Hamburger button:', hamburgerButton);
+    console.log('[PDF Viewer] Search button:', searchButton);
+    
+    // Debug: listar todos os botões disponíveis
+    const allButtons = toolbar.querySelectorAll('button, pdf-shy-button');
+    console.log('[PDF Viewer] Todos os botões encontrados:', allButtons);
+    allButtons.forEach((btn, index) => {
+      const htmlBtn = btn as HTMLElement;
+      console.log(`[PDF Viewer] Botão ${index}:`, {
+        id: htmlBtn.id,
+        title: htmlBtn.title,
+        className: htmlBtn.className,
+        tagName: htmlBtn.tagName,
+        l10nid: htmlBtn.getAttribute('l10nid'),
+        innerHTML: htmlBtn.innerHTML.substring(0, 100) + '...'
+      });
+    });
+
+    // Criar botão toggle único
+    const toggleButton = this.createToggleButton();
+
+    // Posicionar de forma mais simples e segura
+    if (hamburgerButton && hamburgerButton.parentNode) {
+      console.log('[PDF Viewer] Inserindo à direita do hamburger');
+      // Inserir logo após o hamburger
+      hamburgerButton.parentNode.insertBefore(toggleButton, hamburgerButton.nextSibling);
+    } else {
+      console.log('[PDF Viewer] Fallback: inserindo no início do toolbar');
+      // Fallback: inserir no início do toolbar
+      const toolbarViewer = toolbar.querySelector('#toolbarViewer') || toolbar.querySelector('.toolbarViewer');
+      if (toolbarViewer) {
+        toolbarViewer.insertBefore(toggleButton, toolbarViewer.firstChild);
+      } else {
+        toolbar.insertBefore(toggleButton, toolbar.firstChild);
+      }
+    }
+
+    console.log('[PDF Viewer] Botão criado e inserido:', toggleButton);
+  }
+
+  private createCustomMenuButton(host: HTMLElement): void {
+    const toolbar = host.querySelector('#toolbarContainer') || host.querySelector('.toolbar');
+    if (!toolbar) return;
+
+    // Verificar se já criamos o botão
+    if (toolbar.querySelector('.viewer__custom-menu-button')) return;
+
+    const menuButton = document.createElement('button');
+    menuButton.className = 'toolbarButton viewer__custom-menu-button';
+    menuButton.title = 'Opções de navegação';
+    menuButton.innerHTML = `
+      <span class="toolbarButtonIcon">⚙</span>
+      <span class="toolbarButtonLabel">Navegação</span>
+    `;
+
+    // Adicionar estilos
+    menuButton.style.cssText = `
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(0, 0, 0, 0.2);
+      border-radius: 4px;
+      margin-left: 0.5rem;
+      cursor: pointer;
+      transition: all 150ms ease-in-out;
+    `;
+
+    menuButton.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.toggleCustomNavigationMenu(host);
+    });
+
+    // Inserir no toolbar
+    const toolbarViewer = toolbar.querySelector('#toolbarViewer') || toolbar.querySelector('.toolbarViewer');
+    if (toolbarViewer) {
+      toolbarViewer.appendChild(menuButton);
+    } else {
+      toolbar.appendChild(menuButton);
+    }
+  }
+
+  private createToggleButton(): HTMLElement {
+    const button = document.createElement('button');
+    button.className = 'toolbarButton viewer__custom-nav-button';
+    button.title = 'Atalhos de navegação';
+    
+    const isActive = this.viewerSettingsSnapshot().showPageNavigationButtons;
+    
+    // Usar ícone mais simples e visível
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'toolbarButtonIcon';
+    
+    // Usar ícone Unicode mais simples
+    iconSpan.textContent = '📄';
+    iconSpan.style.cssText = `
+      font-size: 16px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    `;
+
+    button.appendChild(iconSpan);
+
+    // Aplicar estilos similares aos botões nativos
+    button.style.cssText = `
+      background: ${isActive ? 'rgba(212, 175, 55, 0.3)' : 'transparent'};
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 150ms ease-in-out;
+      padding: 0;
+      margin: 0 4px;
+      width: 28px;
+      height: 28px;
+      display: inline-block;
+      vertical-align: top;
+      box-sizing: border-box;
+      position: relative;
+    `;
+
+    // Adicionar hover effect
+    button.addEventListener('mouseenter', () => {
+      button.style.background = isActive ? 'rgba(212, 175, 55, 1)' : 'rgba(255, 255, 255, 1)';
+    });
+
+    button.addEventListener('mouseleave', () => {
+      const currentState = this.viewerSettingsSnapshot().showPageNavigationButtons;
+      button.style.background = currentState ? 'rgba(212, 175, 55, 0.3)' : 'transparent';
+    });
+
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.togglePageNavigationButtons();
+      
+             // Atualizar estado visual
+             setTimeout(() => {
+               const newState = this.viewerSettingsSnapshot();
+               button.style.background = newState.showPageNavigationButtons ? 'rgba(212, 175, 55, 0.3)' : 'transparent';
+               
+               // Atualizar tooltip
+               button.title = newState.showPageNavigationButtons ? 'Ocultar atalhos de navegação' : 'Mostrar atalhos de navegação';
+             }, 100);
+    });
+
+    return button;
+  }
+
+  private toggleCustomNavigationMenu(host: HTMLElement): void {
+    // Implementar dropdown menu se necessário
+    console.log('Toggle custom navigation menu');
   }
 
   ngOnDestroy(): void {

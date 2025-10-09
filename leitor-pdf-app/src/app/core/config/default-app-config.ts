@@ -34,4 +34,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     },
     contentMaxWidth: 1440,
   },
+  viewer: {
+    showPageNavigationButtons: true,
+  },
 };

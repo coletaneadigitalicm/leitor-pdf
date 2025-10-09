@@ -12,6 +12,7 @@ import { AppConfigService } from '../config/app-config.service';
 })
 export class ShellComponent {
   private readonly appConfigService = inject(AppConfigService);
+  
   protected readonly layout = this.appConfigService.getLayout();
   protected readonly theme = this.appConfigService.getTheme();
   protected readonly appTitle = this.appConfigService.getAppTitle();

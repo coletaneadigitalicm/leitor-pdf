@@ -32,6 +32,10 @@ export interface AppLayoutConfig {
   contentMaxWidth: number;
 }
 
+export interface ViewerOptions {
+  showPageNavigationButtons: boolean;
+}
+
 export interface AppConfig {
   appTitle: string;
   theme: ThemePalette;
@@ -40,4 +44,5 @@ export interface AppConfig {
     bodyFamily: string;
   };
   layout: AppLayoutConfig;
+  viewer: ViewerOptions;
 }

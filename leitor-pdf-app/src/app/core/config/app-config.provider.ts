@@ -39,5 +39,9 @@ function mergeConfig(overrides: Partial<AppConfig>): AppConfig {
         },
       },
     },
+    viewer: {
+      ...DEFAULT_APP_CONFIG.viewer,
+      ...overrides.viewer,
+    },
   };
 }

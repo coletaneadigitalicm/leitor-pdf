@@ -92,17 +92,8 @@
 
 .app-shell__surface {
   width: min(100%, var(--content-max-width, 1200px));
-  background:
-    linear-gradient(rgba(255, 248, 225, 0.88), rgba(255, 248, 225, 0.92)), var(--card-color);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  padding: calc(var(--spacing-4) + 0.5rem) var(--spacing-4);
-  color: var(--text-dark);
-  min-height: calc(100vh - var(--toolbar-height-desktop, 80px));
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-3);
 }
+
 
 @media (max-width: 1024px) {
   .app-shell__body {

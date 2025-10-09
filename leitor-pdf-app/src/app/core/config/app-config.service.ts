@@ -25,6 +25,10 @@ export class AppConfigService {
     return this.config.layout;
   }
 
+  getViewerOptions() {
+    return this.config.viewer;
+  }
+
   getConfig(): AppConfig {
     return this.config;
   }
