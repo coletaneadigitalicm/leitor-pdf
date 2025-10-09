@@ -350,14 +350,17 @@ export class ViewerPageComponent implements OnDestroy {
     // Apply visibility settings
     if (settings.showPageNavigationButtons) {
       zone.style.display = 'block';
+      zone.style.opacity = '1';
       zone.style.pointerEvents = 'auto';
       zone.style.background = 'rgba(0, 0, 0, 0.1)';
       zone.style.borderRadius = '8px';
       zone.style.transition = 'background-color 150ms ease-in-out';
       zone.classList.add('viewer__page-tap-zone--visible');
     } else {
-      zone.style.display = 'none';
-      zone.style.pointerEvents = 'none';
+      zone.style.display = 'block'; // Manter no DOM
+      zone.style.opacity = '0'; // Esconder visualmente mas manter clicável
+      zone.style.pointerEvents = 'auto'; // Manter funcionalidade sempre ativa
+      zone.style.background = 'transparent'; // Sem fundo quando invisível
       zone.classList.remove('viewer__page-tap-zone--visible');
     }
 
