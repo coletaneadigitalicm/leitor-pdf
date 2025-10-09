@@ -83,12 +83,22 @@ export class ViewerPageComponent implements OnDestroy {
   });
 
   private tapZoneObserver?: MutationObserver;
+  private initialPageFromHash?: number;
+  private hashApplied = false;
 
   constructor() {
+    console.log('[viewer] === DEBUG: Construtor iniciado ===');
+    console.log('[viewer] URL atual:', window.location.href);
+    console.log('[viewer] Hash atual:', window.location.hash);
+    
+    this.extractPageFromHash();
+    
     this.watchQueryParams();
     this.prefetchBackgroundDocuments();
     this.resetPaginationOnDocumentChange();
     this.watchViewerSettingsChanges();
+    
+    console.log('[viewer] === DEBUG: Construtor finalizado ===');
   }
 
   protected retry(): void {
@@ -132,6 +142,10 @@ export class ViewerPageComponent implements OnDestroy {
   }
 
   protected onPdfLoaded(docId: string, event: PdfLoadedEvent): void {
+    console.log('[viewer] === DEBUG: PDF Carregado ===');
+    console.log('[viewer] docId:', docId);
+    console.log('[viewer] event:', event);
+    
     this.viewerState.markDocumentReady(docId, { pageCount: event.pagesCount });
     const rawPagesCount: unknown = (event as { pagesCount?: unknown }).pagesCount;
     const rawPageNumber: unknown = (event as { pageNumber?: unknown }).pageNumber;
@@ -139,14 +153,28 @@ export class ViewerPageComponent implements OnDestroy {
     const totalPages = typeof rawPagesCount === 'number' ? rawPagesCount : this.totalPages;
     const pageNumber = typeof rawPageNumber === 'number' ? rawPageNumber : 1;
 
-    this.totalPages = totalPages;
-    this.currentPage = pageNumber;
+    console.log('[viewer] totalPages:', totalPages);
+    console.log('[viewer] pageNumber padrão:', pageNumber);
+    console.log('[viewer] initialPageFromHash:', this.initialPageFromHash);
 
-    console.debug('[viewer] pdfLoaded', {
-      docId,
-      totalPages,
-      pageNumber,
-    });
+    this.totalPages = totalPages;
+    
+    // Se temos uma página inicial do hash e ela é válida, usar ela
+    if (this.initialPageFromHash && this.initialPageFromHash <= totalPages && !this.hashApplied) {
+      this.currentPage = this.initialPageFromHash;
+      this.hashApplied = true;
+      console.log('[viewer] ✅ Usando página inicial do hash:', this.initialPageFromHash);
+      this.initialPageFromHash = undefined; // Limpar após usar
+    } else {
+      this.currentPage = pageNumber;
+      console.log('[viewer] ⚠️ Usando página padrão:', pageNumber);
+      if (this.initialPageFromHash && !this.hashApplied) {
+        console.log('[viewer] ❌ Página do hash inválida ou maior que total:', this.initialPageFromHash, '>', totalPages);
+      }
+    }
+
+    console.log('[viewer] currentPage final:', this.currentPage);
+    console.log('[viewer] === DEBUG: PDF Carregado - Fim ===');
 
     if (this.activeDocument()?.id === docId) {
       this.updatePageTapZones();
@@ -255,16 +283,40 @@ export class ViewerPageComponent implements OnDestroy {
 
   private resetPaginationOnDocumentChange(): void {
     effect(() => {
+      console.log('[viewer] === DEBUG: Reset Pagination ===');
       const doc = this.activeDocument();
+      console.log('[viewer] activeDocument:', doc);
+      console.log('[viewer] hashApplied:', this.hashApplied);
+      
       if (!doc) {
+        console.log('[viewer] Nenhum documento ativo, resetando para página 1');
         this.currentPage = 1;
         this.totalPages = 0;
+        this.hashApplied = false; // Reset flag quando não há documento
         return;
       }
 
-      this.currentPage = 1;
+      console.log('[viewer] initialPageFromHash:', this.initialPageFromHash);
+      console.log('[viewer] doc.pageCount:', doc.pageCount);
+      
+      // Se já aplicamos o hash, não fazer nada
+      if (this.hashApplied) {
+        console.log('[viewer] Hash já aplicado, mantendo estado atual');
+        this.totalPages = doc.pageCount ?? 0;
+        this.updatePageTapZones();
+        console.log('[viewer] === DEBUG: Reset Pagination - Fim (Hash já aplicado) ===');
+        return;
+      }
+      
+      // Definir apenas totalPages, não currentPage
       this.totalPages = doc.pageCount ?? 0;
+      
+      console.log('[viewer] totalPages definido:', this.totalPages);
+      console.log('[viewer] currentPage mantido:', this.currentPage);
+      
       this.updatePageTapZones();
+      
+      console.log('[viewer] === DEBUG: Reset Pagination - Fim ===');
     });
   }
 
@@ -671,6 +723,67 @@ export class ViewerPageComponent implements OnDestroy {
   private toggleCustomNavigationMenu(host: HTMLElement): void {
     // Implementar dropdown menu se necessário
     console.log('Toggle custom navigation menu');
+  }
+
+  private extractPageFromHash(): void {
+    // Capturar o hash da URL antes do Angular Router processar
+    console.log('[viewer] === DEBUG: Iniciando extração de hash ===');
+    console.log('[viewer] window.location:', window.location);
+    console.log('[viewer] window.location.href:', window.location.href);
+    console.log('[viewer] window.location.hash:', window.location.hash);
+    
+    // Tentar diferentes formas de acessar o hash
+    try {
+      // Método 1: window.location.hash
+      let hash = window.location.hash;
+      console.log('[viewer] Método 1 - window.location.hash:', hash);
+      
+      // Método 2: Extrair da URL completa
+      if (!hash || hash === '') {
+        const urlParts = window.location.href.split('#');
+        if (urlParts.length > 1) {
+          hash = '#' + urlParts[1];
+          console.log('[viewer] Método 2 - Extraído da URL:', hash);
+        }
+      }
+      
+      // Método 3: Usar document.location se window.location falhar
+      if (!hash || hash === '') {
+        try {
+          hash = document.location.hash;
+          console.log('[viewer] Método 3 - document.location.hash:', hash);
+        } catch (e) {
+          console.log('[viewer] Método 3 falhou:', e);
+        }
+      }
+      
+      console.log('[viewer] Hash final extraído:', hash);
+      console.log('[viewer] Tipo do hash:', typeof hash);
+      console.log('[viewer] Hash length:', hash?.length);
+      
+      if (hash && hash.startsWith('#page=')) {
+        const pageStr = hash.substring(6);
+        console.log('[viewer] String da página extraída:', pageStr);
+        const pageNumber = parseInt(pageStr, 10);
+        console.log('[viewer] Número da página convertido:', pageNumber);
+        console.log('[viewer] É número válido?', !isNaN(pageNumber));
+        console.log('[viewer] É maior que 0?', pageNumber > 0);
+        
+        if (!isNaN(pageNumber) && pageNumber > 0) {
+          this.initialPageFromHash = pageNumber;
+          console.log('[viewer] ✅ Página inicial definida:', pageNumber);
+        } else {
+          console.log('[viewer] ❌ Página inválida:', pageNumber);
+        }
+      } else {
+        console.log('[viewer] ❌ Hash não contém #page= ou está vazio');
+        console.log('[viewer] Hash atual:', hash);
+      }
+    } catch (error) {
+      console.error('[viewer] ❌ Erro ao extrair hash:', error);
+    }
+    
+    console.log('[viewer] === DEBUG: Finalizando extração de hash ===');
   }
 
   ngOnDestroy(): void {
