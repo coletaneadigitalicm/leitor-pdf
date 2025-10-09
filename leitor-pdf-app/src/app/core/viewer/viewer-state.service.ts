@@ -6,6 +6,7 @@ import { isValidHttpUrl } from '../utils/url.utils';
 import {
   buildDocumentFromFile,
   buildDocumentFromUrl,
+  createDocumentIdFromUrl,
   createInitialViewerState,
 } from './viewer-state.util';
 import { ViewerDocument, ViewerState, ViewerStatus } from './viewer-state.model';
@@ -22,50 +23,217 @@ export class ViewerStateService {
   private readonly stateSubject = new BehaviorSubject<ViewerState>(createInitialViewerState());
   readonly state$ = this.stateSubject.asObservable();
 
-  loadFromUrl(rawUrl: string): LoadResult {
+  private lastExternalCombinationKey: string | null = null;
+
+  get snapshot(): ViewerState {
+    return this.stateSubject.value;
+  }
+
+  applyExternalSources(urls: string[], activeId?: string | null): void {
+    const normalized = this.normalizeUrls(urls);
+    const combinationKey = this.buildCombinationKey(normalized);
+
+    if (!normalized.length) {
+      this.reset();
+      this.lastExternalCombinationKey = null;
+      return;
+    }
+
+    if (this.lastExternalCombinationKey === combinationKey) {
+      if (activeId && this.snapshot.activeId !== activeId && this.hasDocument(activeId)) {
+        this.setActiveDocument(activeId);
+      }
+      return;
+    }
+
+    this.setState((prev) => {
+      const existingByUrl = new Map(
+        prev.documents.filter((doc) => doc.url).map((doc) => [doc.url!, doc]),
+      );
+
+      const documents = normalized.map((url) => {
+        const existing = existingByUrl.get(url);
+        if (existing) {
+          return {
+            ...existing,
+            lastUpdatedAt: Date.now(),
+          } satisfies ViewerDocument;
+        }
+        return buildDocumentFromUrl(url);
+      });
+
+      let nextActiveId: string | null = null;
+      if (activeId && documents.some((doc) => doc.id === activeId)) {
+        nextActiveId = activeId;
+      } else {
+        nextActiveId = documents[0]?.id ?? null;
+      }
+
+      return {
+        ...prev,
+        documents,
+        activeId: nextActiveId,
+      } satisfies ViewerState;
+    });
+
+    const activeDocument = this.getActiveDocument();
+    if (activeDocument && activeDocument.status === 'idle') {
+      this.markDocumentLoading(activeDocument.id);
+    }
+
+    this.lastExternalCombinationKey = combinationKey;
+  }
+
+  addDocumentFromUrl(
+    rawUrl: string,
+    options?: { setActive?: boolean; prepend?: boolean },
+  ): LoadResult {
     const url = rawUrl?.trim();
     if (!isValidHttpUrl(url)) {
       const error = 'URL inválida. Certifique-se de incluir http:// ou https://';
-      this.setErrorState(error);
       return { success: false, error };
     }
 
-    this.setLoadingState(buildDocumentFromUrl(url));
+    const id = createDocumentIdFromUrl(url);
+    const existing = this.snapshot.documents.find((doc) => doc.id === id);
+
+    if (existing) {
+      if (options?.setActive !== false) {
+        this.setActiveDocument(existing.id);
+        if (existing.status === 'idle') {
+          this.markDocumentLoading(existing.id);
+        }
+      }
+      return { success: true };
+    }
+
+    const document = buildDocumentFromUrl(url);
+
+    this.setState((prev) => {
+      const documents = options?.prepend
+        ? [document, ...prev.documents]
+        : [...prev.documents, document];
+      const activeId = options?.setActive === false ? (prev.activeId ?? document.id) : document.id;
+
+      return {
+        ...prev,
+        documents,
+        activeId,
+      } satisfies ViewerState;
+    });
+
+    this.markDocumentLoading(document.id);
+
     return { success: true };
   }
 
-  loadFromFile(file: File): LoadResult {
+  addDocumentFromFile(file: File, options?: { setActive?: boolean }): LoadResult {
     if (!(file instanceof File)) {
       const error = 'Arquivo inválido fornecido.';
-      this.setErrorState(error);
       return { success: false, error };
     }
 
-    this.setLoadingState(buildDocumentFromFile(file));
+    const document = buildDocumentFromFile(file);
+
+    this.setState((prev) => {
+      const documents = [...prev.documents, document];
+      const activeId = options?.setActive === false ? (prev.activeId ?? document.id) : document.id;
+
+      return {
+        ...prev,
+        documents,
+        activeId,
+      } satisfies ViewerState;
+    });
+
+    this.markDocumentLoading(document.id);
+
     return { success: true };
   }
 
-  markReady(): void {
-    this.updateState({
-      status: 'ready',
-      error: null,
+  setActiveDocument(id: string): void {
+    if (!this.hasDocument(id) || this.snapshot.activeId === id) {
+      return;
+    }
+
+    this.setState(
+      (prev) =>
+        ({
+          ...prev,
+          activeId: id,
+        }) satisfies ViewerState,
+    );
+
+    const next = this.getActiveDocument();
+    if (next && next.status === 'idle') {
+      this.markDocumentLoading(next.id);
+    }
+  }
+
+  closeDocument(id: string): void {
+    if (!this.hasDocument(id)) {
+      return;
+    }
+
+    this.setState((prev) => {
+      const index = prev.documents.findIndex((doc) => doc.id === id);
+      const documents = prev.documents.filter((doc) => doc.id !== id);
+
+      let activeId = prev.activeId;
+      if (prev.activeId === id) {
+        const fallback = documents[index] ?? documents[index - 1] ?? documents[0] ?? null;
+        activeId = fallback?.id ?? null;
+      }
+
+      return {
+        ...prev,
+        documents,
+        activeId,
+      } satisfies ViewerState;
     });
   }
 
-  markError(errorMessage: string): void {
-    this.updateState({
+  markDocumentLoading(id: string): void {
+    this.updateDocument(id, (doc) => ({
+      ...doc,
+      status: 'loading',
+      error: null,
+      lastUpdatedAt: Date.now(),
+    }));
+  }
+
+  markDocumentReady(id: string, info?: { pageCount?: number }): void {
+    this.updateDocument(id, (doc) => ({
+      ...doc,
+      status: 'ready',
+      error: null,
+      pageCount: info?.pageCount ?? doc.pageCount,
+    }));
+  }
+
+  markDocumentError(id: string, message: string): void {
+    this.updateDocument(id, (doc) => ({
+      ...doc,
       status: 'error',
-      error: errorMessage,
-    });
+      error: message,
+    }));
   }
 
   reset(): void {
     this.stateSubject.next(createInitialViewerState());
+    this.lastExternalCombinationKey = null;
   }
 
-  selectDocument$(): Observable<ViewerDocument | null> {
+  selectDocuments$(): Observable<ViewerDocument[]> {
     return this.state$.pipe(
-      map((state) => state.document),
+      map((state) => state.documents),
+      distinctUntilChanged(),
+    );
+  }
+
+  selectActiveDocument$(): Observable<ViewerDocument | null> {
+    return this.state$.pipe(
+      map((state) => state.documents.find((doc) => doc.id === state.activeId) ?? null),
       distinctUntilChanged(),
     );
   }
@@ -77,27 +245,88 @@ export class ViewerStateService {
     );
   }
 
-  private setLoadingState(document: ViewerDocument): void {
-    this.stateSubject.next({
-      status: 'loading',
-      error: null,
-      document,
+  private updateDocument(id: string, updater: (doc: ViewerDocument) => ViewerDocument): void {
+    if (!this.hasDocument(id)) {
+      return;
+    }
+
+    this.setState((prev) => {
+      const documents = prev.documents.map((doc) => (doc.id === id ? updater(doc) : doc));
+
+      return {
+        ...prev,
+        documents,
+      } satisfies ViewerState;
     });
   }
 
-  private setErrorState(error: string): void {
-    this.stateSubject.next({
-      status: 'error',
+  private setState(updater: (prev: ViewerState) => ViewerState): void {
+    const current = this.snapshot;
+    const updated = this.recalculateDerivedState(updater(current));
+    this.stateSubject.next(updated);
+    this.updateExternalCombinationKey(updated);
+  }
+
+  private recalculateDerivedState(state: ViewerState): ViewerState {
+    let activeId = state.activeId;
+    const hasActive = activeId && state.documents.some((doc) => doc.id === activeId);
+    if (!hasActive) {
+      activeId = state.documents[0]?.id ?? null;
+    }
+
+    const activeDocument = state.documents.find((doc) => doc.id === activeId) ?? null;
+
+    let status: ViewerStatus = 'idle';
+    let error: string | null = null;
+
+    if (activeDocument) {
+      status = activeDocument.status === 'idle' ? 'loading' : activeDocument.status;
+      error = activeDocument.status === 'error' ? activeDocument.error : null;
+    } else {
+      status = 'idle';
+      error = null;
+    }
+
+    return {
+      ...state,
+      activeId,
+      status,
       error,
-      document: null,
-    });
+    } satisfies ViewerState;
   }
 
-  private updateState(partial: Partial<ViewerState>): void {
-    const current = this.stateSubject.value;
-    this.stateSubject.next({
-      ...current,
-      ...partial,
-    });
+  private updateExternalCombinationKey(state: ViewerState = this.snapshot): void {
+    const urls = state.documents
+      .filter((doc) => doc.sourceType === 'url' && doc.url)
+      .map((doc) => doc.url!);
+    this.lastExternalCombinationKey = urls.length ? this.buildCombinationKey(urls) : null;
+  }
+
+  private hasDocument(id: string): boolean {
+    return this.snapshot.documents.some((doc) => doc.id === id);
+  }
+
+  private getActiveDocument(): ViewerDocument | null {
+    return this.snapshot.documents.find((doc) => doc.id === this.snapshot.activeId) ?? null;
+  }
+
+  private normalizeUrls(urls: string[]): string[] {
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+
+    for (const url of urls) {
+      const candidate = url.trim();
+      if (!candidate || !isValidHttpUrl(candidate) || seen.has(candidate)) {
+        continue;
+      }
+      seen.add(candidate);
+      normalized.push(candidate);
+    }
+
+    return normalized;
+  }
+
+  private buildCombinationKey(urls: string[]): string {
+    return urls.join('||');
   }
 }

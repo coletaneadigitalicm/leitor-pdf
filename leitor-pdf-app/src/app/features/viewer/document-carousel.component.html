@@ -1,0 +1,43 @@
+<div class="carousel" role="tablist" aria-label="Documentos carregados" #track>
+  <div
+    *ngFor="let document of documents; trackBy: trackById"
+    class="carousel__chip"
+    [ngClass]="{
+      'carousel__chip--active': isActive(document),
+      'carousel__chip--loading': getStatus(document) === 'loading',
+      'carousel__chip--error': getStatus(document) === 'error',
+    }"
+    role="tab"
+    tabindex="0"
+    [attr.aria-selected]="isActive(document)"
+    (click)="onSelect(document)"
+    (keydown)="onKeydown(document, $event)"
+    [title]="document.name"
+  >
+    <div class="carousel__content">
+      <span class="carousel__name">{{ document.name }}</span>
+      <span class="carousel__meta" aria-hidden="true">
+        <span>{{ getOriginLabel(document) }}</span>
+        <span *ngIf="document.pageCount as pages" class="carousel__pages"> {{ pages }} pág. </span>
+      </span>
+    </div>
+
+    <span class="carousel__status">
+      <span
+        *ngIf="getStatus(document) === 'loading'"
+        class="carousel__spinner"
+        aria-hidden="true"
+      ></span>
+      <span *ngIf="getStatus(document) === 'error'" aria-hidden="true">⚠</span>
+    </span>
+
+    <button
+      type="button"
+      class="carousel__close"
+      aria-label="Fechar {{ document.name }}"
+      (click)="onClose(document, $event)"
+    >
+      ×
+    </button>
+  </div>
+</div>

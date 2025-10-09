@@ -1,10 +1,19 @@
 <section class="viewer">
-  <div class="viewer__status" *ngIf="hasError()">
+  <app-document-carousel
+    *ngIf="documents().length"
+    class="viewer__carousel"
+    [documents]="documents()"
+    [activeId]="state().activeId"
+    (selectDocument)="onDocumentSelected($event)"
+    (closeDocument)="onDocumentClosed($event)"
+  ></app-document-carousel>
+
+  <div class="viewer__status" *ngIf="hasError() && activeError() as errorMessage">
     <div class="viewer__status-banner viewer__status-banner--error" role="alert">
       <div class="viewer__status-icon" aria-hidden="true">!</div>
       <div>
         <p class="viewer__status-title">Não foi possível carregar o documento.</p>
-        <p class="viewer__status-message">{{ state().error }}</p>
+        <p class="viewer__status-message">{{ errorMessage }}</p>
       </div>
       <div class="viewer__status-actions">
         <button type="button" class="ghost" (click)="retry()">Tentar novamente</button>
@@ -13,55 +22,55 @@
     </div>
   </div>
 
-  <form class="viewer__controls" (ngSubmit)="submitUrl()" novalidate>
-    <label class="viewer__input">
-      <span class="viewer__input-label">Abrir por URL</span>
-      <input
-        type="url"
-        name="documentUrl"
-        [(ngModel)]="urlInput"
-        placeholder="https://exemplo.com/arquivo.pdf"
-        spellcheck="false"
-        autocomplete="off"
-      />
-    </label>
-    <button type="submit" class="primary" [disabled]="!urlInput.trim()">Carregar URL</button>
-    <label class="viewer__upload">
-      <input
-        type="file"
-        accept="application/pdf"
-        (change)="onFileSelected($event)"
-        aria-label="Selecionar PDF local"
-      />
-      <span>Selecionar arquivo</span>
-    </label>
-  </form>
+  <ng-container *ngIf="hasDocuments(); else viewerEmpty">
+    <div #canvas class="viewer__canvas" *ngIf="activeDocument() as doc">
+      <ngx-extended-pdf-viewer
+        #pdfViewer
+        [page]="currentPage"
+        (pageChange)="onPageChange($event)"
+        [scrollMode]="pageScrollMode"
+        [src]="getDocumentSource(doc)"
+        [height]="'100vh'"
+        [showSidebarButton]="true"
+        [showFindButton]="true"
+        [showDownloadButton]="true"
+        [showPrintButton]="true"
+        [zoom]="'auto'"
+        [textLayer]="true"
+        (pdfLoaded)="onPdfLoaded(doc.id, $event)"
+        (pdfLoadingFailed)="onPdfLoadFailed(doc.id, $event)"
+      ></ngx-extended-pdf-viewer>
 
-  <div class="viewer__placeholder" *ngIf="state().status === 'idle'">
-    <h2>Selecione um PDF</h2>
-    <p>
-      Informe uma URL com o parâmetro
-      <code>?url=https://seuarquivo.pdf</code>
-      ou suba um arquivo local para iniciar a leitura.
-    </p>
-  </div>
-
-  <div class="viewer__canvas" *ngIf="document() as doc">
-    <ngx-extended-pdf-viewer
-      [src]="doc.sourceType === 'url' ? doc.url : doc.file"
-      [height]="'100%'"
-      [useBrowserLocale]="true"
-      [showSidebarButton]="true"
-      [showFindButton]="true"
-      [zoom]="'auto'"
-      [textLayer]="true"
-      (pdfLoaded)="onPdfLoaded()"
-      (pdfLoadingFailed)="onPdfLoadFailed($event)"
-    />
-
-    <div class="viewer__overlay" *ngIf="isLoading()" aria-live="polite">
-      <div class="viewer__spinner" role="presentation"></div>
-      <p>Carregando documento...</p>
+      <div class="viewer__overlay" *ngIf="isLoading()" aria-live="polite">
+        <div class="viewer__spinner" role="presentation"></div>
+        <p>Carregando documento...</p>
+      </div>
     </div>
+  </ng-container>
+
+  <ng-template #viewerEmpty>
+    <div class="viewer__placeholder">
+      <h2>Selecione um PDF</h2>
+      <p>
+        Forneça URLs via query string &mdash; por exemplo <code>?urls=pdf1|pdf2</code> &mdash; para
+        carregar documentos automaticamente.
+      </p>
+    </div>
+  </ng-template>
+
+  <div class="viewer__background-loaders" aria-hidden="true">
+    <ngx-extended-pdf-viewer
+      *ngFor="let doc of backgroundDocuments()"
+      class="viewer__background-loader"
+      [src]="getDocumentSource(doc)"
+      [scrollMode]="pageScrollMode"
+      [showToolbar]="false"
+      [showSidebarButton]="false"
+      [showFindButton]="false"
+      [showSecondaryToolbarButton]="false"
+      [height]="'0px'"
+      (pdfLoaded)="onPdfLoaded(doc.id, $event)"
+      (pdfLoadingFailed)="onPdfLoadFailed(doc.id, $event)"
+    ></ngx-extended-pdf-viewer>
   </div>
 </section>

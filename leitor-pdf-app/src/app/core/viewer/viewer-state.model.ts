@@ -1,5 +1,7 @@
 export type ViewerSourceType = 'url' | 'file';
 
+export type ViewerDocumentStatus = 'idle' | 'loading' | 'ready' | 'error';
+
 export interface ViewerDocument {
   id: string;
   name: string;
@@ -7,12 +9,16 @@ export interface ViewerDocument {
   url?: string;
   file?: File;
   lastUpdatedAt: number;
+  status: ViewerDocumentStatus;
+  error: string | null;
+  pageCount?: number;
 }
 
 export type ViewerStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export interface ViewerState {
+  documents: ViewerDocument[];
+  activeId: string | null;
   status: ViewerStatus;
-  document: ViewerDocument | null;
   error: string | null;
 }

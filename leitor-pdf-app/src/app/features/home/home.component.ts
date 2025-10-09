@@ -1,4 +1,3 @@
-import { NgFor } from '@angular/common';
 import { Component, inject } from '@angular/core';
 
 import { AppConfigService } from '../../core/config/app-config.service';
@@ -12,7 +11,6 @@ interface Highlight {
 @Component({
   selector: 'app-home',
   standalone: true,
-  imports: [NgFor],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
 })

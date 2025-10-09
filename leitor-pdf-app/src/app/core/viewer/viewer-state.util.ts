@@ -2,19 +2,22 @@ import { ViewerDocument, ViewerState } from './viewer-state.model';
 
 export function createInitialViewerState(): ViewerState {
   return {
+    documents: [],
+    activeId: null,
     status: 'idle',
-    document: null,
     error: null,
   };
 }
 
 export function buildDocumentFromUrl(url: string): ViewerDocument {
   return {
-    id: url,
+    id: createDocumentIdFromUrl(url),
     name: decodeURIComponent(deriveDocumentName(url)),
     sourceType: 'url',
     url,
     lastUpdatedAt: Date.now(),
+    status: 'idle',
+    error: null,
   };
 }
 
@@ -25,7 +28,13 @@ export function buildDocumentFromFile(file: File): ViewerDocument {
     sourceType: 'file',
     file,
     lastUpdatedAt: Date.now(),
+    status: 'idle',
+    error: null,
   };
+}
+
+export function createDocumentIdFromUrl(url: string): string {
+  return url.trim();
 }
 
 function deriveDocumentName(url: string): string {
