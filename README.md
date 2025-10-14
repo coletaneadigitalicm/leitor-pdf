@@ -1,6 +1,120 @@
 # LeitorPdfApp
 
+Advanced PDF viewer for Angular 20 with multi-document support, offline capabilities, and custom navigation features.
+
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.0.0.
+
+## Using as a Library in Another Angular Project
+
+This PDF viewer can be integrated into other Angular 20 projects as a reusable module via git submodule or monorepo.
+
+### Setup via Git Submodule
+
+1. Add as submodule in your parent project:
+```bash
+cd your-angular-project
+git submodule add <this-repo-url> libs/pdf-viewer
+git submodule update --init --recursive
+```
+
+2. Configure TypeScript paths in your `tsconfig.json`:
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "@pdf-viewer/*": ["libs/pdf-viewer/src/app/features/viewer/*"],
+      "@pdf-viewer/core/*": ["libs/pdf-viewer/src/app/core/*"]
+    }
+  }
+}
+```
+
+3. Import the module in your component or app config:
+```typescript
+import { PdfViewerModule } from '@pdf-viewer/viewer.module';
+
+// In your component
+@Component({
+  imports: [PdfViewerModule],
+  // ...
+})
+```
+
+### Usage Options
+
+#### Option A: Programmatic Inputs (Best for Offline/Service Workers)
+
+```typescript
+<app-viewer-page 
+  [urls]="pdfUrls"
+  [activeDocumentId]="activePdfId">
+</app-viewer-page>
+```
+
+```typescript
+export class YourComponent {
+  pdfUrls = [
+    'https://example.com/doc1.pdf#page=1',
+    'https://example.com/doc2.pdf#page=277'
+  ];
+  activePdfId = 'https://example.com/doc1.pdf';
+}
+```
+
+#### Option B: Query Parameters (Best for Shareable URLs)
+
+**With Base64 encoding (recommended for multiple URLs):**
+
+```javascript
+// Encode URLs in Base64
+const urls = 'https://example.com/doc1.pdf#page=1,https://example.com/doc2.pdf#page=277';
+const base64Urls = btoa(urls);
+console.log(base64Urls);
+// Navigate to: /viewer?urls={base64Urls}
+```
+
+**Example Base64 URL:**
+```
+https://localhost:4200/?urls=aHR0cHM6Ly9jb2xldGFuZWFkaWdpdGFsaWNtLmdpdGh1Yi5pby9jaWFzL3BkZi9jb2xldGFuZWEvMjNjMDZiNTctYWFjYS00ODNiLTk1M2QtNzI3NjYxMDMxMTQ1LnBkZiNwYWdlPTEsaHR0cHM6Ly9qYWlyb2ZpbGhvNzkuZ2l0aHViLmlvL2F2dWxzb3MtY2lmcmFkb3Mvc291cmNlcy8yMDI1IEdMIEFWVUxTT1MucGRmI3BhZ2U9Mjc3
+```
+
+This will load 2 PDFs: first at page 1, second at page 277.
+
+**With pipe separator:**
+```
+/viewer?urls=https://example.com/doc1.pdf#page=1|https://example.com/doc2.pdf#page=277
+```
+
+#### Option C: Both (Most Flexible)
+
+Component accepts both inputs and query params. Inputs take priority for better offline support.
+
+### Features
+
+- **Multi-document tabs**: Load and switch between multiple PDFs
+- **Corner tap navigation**: Tap left/right corners to navigate pages
+- **Persistent settings**: User preferences saved in localStorage
+- **Auto-disable on zoom**: Navigation automatically disables when zoomed
+- **Fragment support**: Open PDFs at specific pages with `#page=N`
+- **Offline ready**: Works with service workers when using programmatic inputs
+- **Base64 URLs**: Support for encoded URL lists to avoid query param issues
+
+### Service Worker Considerations
+
+For offline support:
+1. Use programmatic inputs (`[urls]`) rather than query params
+2. Pre-cache PDF URLs in your service worker configuration
+3. Component will work fully offline once PDFs are cached
+4. Settings are stored in localStorage and persist offline
+
+### Dependencies
+
+Required peer dependencies:
+- `@angular/core`: ^20.0.0
+- `@angular/common`: ^20.0.0
+- `@angular/router`: ^20.0.0
+- `ngx-extended-pdf-viewer`: ^24.2.5
+- `rxjs`: ~7.8.0
 
 ## Development server
 

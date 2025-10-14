@@ -3,6 +3,7 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  Input,
   NgZone,
   OnDestroy,
   Signal,
@@ -34,6 +35,10 @@ import { DocumentCarouselComponent } from './document-carousel.component';
   styleUrl: './viewer-page.component.scss',
 })
 export class ViewerPageComponent implements OnDestroy {
+  // Inputs para uso programático (melhor para offline/service workers)
+  @Input() urls?: string[];  // URLs to load
+  @Input() activeDocumentId?: string;  // Which document to show initially
+  
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly viewerState = inject(ViewerStateService);
@@ -88,6 +93,7 @@ export class ViewerPageComponent implements OnDestroy {
   private autoDisabledNavigation = false; // Track if navigation was auto-disabled on zoom
 
   constructor() {
+    this.watchInputChanges();
     this.watchQueryParams();
     this.resetPaginationOnDocumentChange();
     this.watchViewerSettingsChanges();
@@ -242,6 +248,22 @@ export class ViewerPageComponent implements OnDestroy {
         queryParamsHandling: 'merge',
       })
       .finally(() => this.paramSyncSuppressed.set(false));
+  }
+
+  private watchInputChanges(): void {
+    effect(() => {
+      // Observar mudanças nos inputs (urls e activeDocumentId)
+      const inputUrls = this.urls;
+      const inputActiveId = this.activeDocumentId;
+      
+      // Inputs têm prioridade sobre query params para melhor suporte offline
+      if (inputUrls && inputUrls.length > 0) {
+        console.log('[INPUT-URLS] Applying from inputs:', inputUrls);
+        this.viewerState.applyExternalSources(inputUrls, inputActiveId ?? null);
+        // Suprimir sync de query params quando usando inputs
+        this.paramSyncSuppressed.set(true);
+      }
+    });
   }
 
   private watchQueryParams(): void {
@@ -967,7 +989,6 @@ export class ViewerPageComponent implements OnDestroy {
 
 function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): string[] {
   console.log('[PARSE-URLS] Raw urlsParam:', urlsParam);
-  console.log('[PARSE-URLS] fallbackUrl:', fallbackUrl);
   
   const values: string[] = [];
 
@@ -975,27 +996,33 @@ function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): s
     let decoded = urlsParam;
     
     // Verificar se está em Base64
-    // Base64 tem apenas caracteres [A-Za-z0-9+/=] e não contém :// (URLs têm)
-    const isBase64 = /^[A-Za-z0-9+/=]+$/.test(urlsParam);
+    // Base64 válido: apenas [A-Za-z0-9+/=-] e comprimento múltiplo de 4 (com padding)
+    // URLs sempre contêm "://" então não são Base64
+    const looksLikeBase64 = !urlsParam.includes('://') && 
+                           /^[A-Za-z0-9+/=-]+$/.test(urlsParam) &&
+                           urlsParam.length > 20; // Base64 de URLs seria longo
     
-    if (isBase64) {
+    if (looksLikeBase64) {
       try {
-        // Decodificar de Base64
         decoded = atob(urlsParam);
         console.log('[PARSE-URLS] Decoded from Base64:', decoded);
       } catch (e) {
-        console.error('[PARSE-URLS] Failed to decode Base64:', e);
-        // Se falhar, tentar usar como URL normal
-        decoded = decodeURIComponent(urlsParam);
+        console.error('[PARSE-URLS] Base64 decode failed:', e);
+        decoded = urlsParam;
       }
     } else {
-      // Não é Base64, fazer decode normal
-      decoded = decodeURIComponent(urlsParam);
-      console.log('[PARSE-URLS] Decoded from URI:', decoded);
+      // Não é Base64, pode ser URL direta ou encoded
+      try {
+        decoded = decodeURIComponent(urlsParam);
+        console.log('[PARSE-URLS] Decoded from URI component');
+      } catch (e) {
+        decoded = urlsParam;
+      }
     }
     
+    // Split por vírgula ou pipe
     const split = decoded.split(/[|,]/);
-    console.log('[PARSE-URLS] After split:', split);
+    console.log('[PARSE-URLS] Split into', split.length, 'URLs');
     
     values.push(...split);
   } else if (fallbackUrl) {
@@ -1003,7 +1030,7 @@ function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): s
   }
 
   const result = values.map((value) => value.trim()).filter(Boolean);
-  console.log('[PARSE-URLS] Final result:', result);
+  console.log('[PARSE-URLS] Final:', result.length, 'valid URLs');
   
   return result;
 }
