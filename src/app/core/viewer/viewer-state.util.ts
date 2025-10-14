@@ -1,5 +1,23 @@
 import { ViewerDocument, ViewerState } from './viewer-state.model';
 
+export interface ParsedUrl {
+  baseUrl: string;      // URL sem fragmento
+  fragment: string | null;  // Fragmento completo (#page=277)
+  pageNumber: number | null; // Número da página extraído
+}
+
+export function parseUrlWithFragment(url: string): ParsedUrl {
+  const [baseUrl, fragment] = url.split('#');
+  const pageMatch = fragment?.match(/page=(\d+)/);
+  const pageNumber = pageMatch ? parseInt(pageMatch[1], 10) : null;
+  
+  return {
+    baseUrl: baseUrl.trim(),
+    fragment: fragment ? `#${fragment}` : null,
+    pageNumber
+  };
+}
+
 export function createInitialViewerState(): ViewerState {
   return {
     documents: [],
@@ -10,11 +28,14 @@ export function createInitialViewerState(): ViewerState {
 }
 
 export function buildDocumentFromUrl(url: string): ViewerDocument {
+  const { baseUrl, pageNumber } = parseUrlWithFragment(url);
+  
   return {
-    id: createDocumentIdFromUrl(url),
-    name: decodeURIComponent(deriveDocumentName(url)),
+    id: createDocumentIdFromUrl(url), // ID baseado na URL base
+    name: decodeURIComponent(deriveDocumentName(baseUrl)),
     sourceType: 'url',
-    url,
+    url: baseUrl, // Armazenar URL base
+    initialPage: pageNumber ?? undefined,
     lastUpdatedAt: Date.now(),
     status: 'idle',
     error: null,
@@ -34,7 +55,8 @@ export function buildDocumentFromFile(file: File): ViewerDocument {
 }
 
 export function createDocumentIdFromUrl(url: string): string {
-  return url.trim();
+  const { baseUrl } = parseUrlWithFragment(url);
+  return baseUrl.trim(); // ID baseado apenas na URL base
 }
 
 function deriveDocumentName(url: string): string {

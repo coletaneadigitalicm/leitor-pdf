@@ -39,6 +39,7 @@
         [textLayer]="true"
         (pdfLoaded)="onPdfLoaded(doc.id, $event)"
         (pdfLoadingFailed)="onPdfLoadFailed(doc.id, $event)"
+        (zoomChange)="onZoomChange($event)"
       ></ngx-extended-pdf-viewer>
 
       <div class="viewer__overlay" *ngIf="isLoading()" aria-live="polite">
@@ -58,19 +59,6 @@
     </div>
   </ng-template>
 
-  <div class="viewer__background-loaders" aria-hidden="true">
-    <ngx-extended-pdf-viewer
-      *ngFor="let doc of backgroundDocuments()"
-      class="viewer__background-loader"
-      [src]="getDocumentSource(doc)"
-      [scrollMode]="pageScrollMode"
-      [showToolbar]="false"
-      [showSidebarButton]="false"
-      [showFindButton]="false"
-      [showSecondaryToolbarButton]="false"
-      [height]="'0px'"
-      (pdfLoaded)="onPdfLoaded(doc.id, $event)"
-      (pdfLoadingFailed)="onPdfLoadFailed(doc.id, $event)"
-    ></ngx-extended-pdf-viewer>
-  </div>
+  <!-- Background loaders removidos - causam conflito de DOM IDs e erro de rendering -->
+  <!-- Documentos serão carregados apenas quando se tornarem ativos -->
 </section>

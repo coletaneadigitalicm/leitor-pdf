@@ -8,6 +8,7 @@ import {
   buildDocumentFromUrl,
   createDocumentIdFromUrl,
   createInitialViewerState,
+  parseUrlWithFragment,
 } from './viewer-state.util';
 import { ViewerDocument, ViewerState, ViewerStatus } from './viewer-state.model';
 
@@ -30,7 +31,11 @@ export class ViewerStateService {
   }
 
   applyExternalSources(urls: string[], activeId?: string | null): void {
+    console.log('[APPLY-SOURCES] Input URLs:', urls);
+    
     const normalized = this.normalizeUrls(urls);
+    console.log('[APPLY-SOURCES] Normalized URLs:', normalized);
+    
     const combinationKey = this.buildCombinationKey(normalized);
 
     if (!normalized.length) {
@@ -51,15 +56,26 @@ export class ViewerStateService {
         prev.documents.filter((doc) => doc.url).map((doc) => [doc.url!, doc]),
       );
 
-      const documents = normalized.map((url) => {
-        const existing = existingByUrl.get(url);
+      const documents = normalized.map((url, index) => {
+        const { baseUrl } = parseUrlWithFragment(url);
+        const existing = existingByUrl.get(baseUrl);
+        
         if (existing) {
+          console.log(`[APPLY-SOURCES] Doc ${index}: Reusing existing`, existing.name);
           return {
             ...existing,
             lastUpdatedAt: Date.now(),
           } satisfies ViewerDocument;
         }
-        return buildDocumentFromUrl(url);
+        
+        const newDoc = buildDocumentFromUrl(url);
+        console.log(`[APPLY-SOURCES] Doc ${index}: Created new`, {
+          name: newDoc.name,
+          id: newDoc.id,
+          url: newDoc.url,
+          initialPage: newDoc.initialPage
+        });
+        return newDoc;
       });
 
       let nextActiveId: string | null = null;
@@ -68,6 +84,9 @@ export class ViewerStateService {
       } else {
         nextActiveId = documents[0]?.id ?? null;
       }
+      
+      console.log('[APPLY-SOURCES] Active ID will be:', nextActiveId);
+      console.log('[APPLY-SOURCES] Documents order:', documents.map(d => d.name));
 
       return {
         ...prev,
@@ -78,6 +97,7 @@ export class ViewerStateService {
 
     const activeDocument = this.getActiveDocument();
     if (activeDocument && activeDocument.status === 'idle') {
+      console.log('[APPLY-SOURCES] Marking active doc as loading:', activeDocument.name);
       this.markDocumentLoading(activeDocument.id);
     }
 
@@ -316,10 +336,13 @@ export class ViewerStateService {
 
     for (const url of urls) {
       const candidate = url.trim();
-      if (!candidate || !isValidHttpUrl(candidate) || seen.has(candidate)) {
+      const { baseUrl } = parseUrlWithFragment(candidate);
+      
+      if (!candidate || !isValidHttpUrl(baseUrl) || seen.has(candidate)) {
         continue;
       }
-      seen.add(candidate);
+      
+      seen.add(candidate); // Adicionar URL completa (com fragmento)
       normalized.push(candidate);
     }
 

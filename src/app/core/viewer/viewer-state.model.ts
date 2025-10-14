@@ -12,6 +12,7 @@ export interface ViewerDocument {
   status: ViewerDocumentStatus;
   error: string | null;
   pageCount?: number;
+  initialPage?: number; // Página inicial solicitada
 }
 
 export type ViewerStatus = 'idle' | 'loading' | 'ready' | 'error';

@@ -1,4 +1,4 @@
-import { NgFor, NgIf } from '@angular/common';
+import { NgIf } from '@angular/common';
 import {
   Component,
   DestroyRef,
@@ -29,7 +29,7 @@ import { DocumentCarouselComponent } from './document-carousel.component';
 @Component({
   selector: 'app-viewer-page',
   standalone: true,
-  imports: [NgIf, NgFor, NgxExtendedPdfViewerModule, DocumentCarouselComponent],
+  imports: [NgIf, NgxExtendedPdfViewerModule, DocumentCarouselComponent],
   templateUrl: './viewer-page.component.html',
   styleUrl: './viewer-page.component.scss',
 })
@@ -64,7 +64,9 @@ export class ViewerPageComponent implements OnDestroy {
   protected readonly backgroundDocuments: Signal<ViewerDocument[]> = computed(() => {
     const current = this.state();
     return current.documents.filter(
-      (doc) => doc.id !== current.activeId && doc.sourceType === 'url' && doc.status !== 'ready',
+      (doc) => doc.id !== current.activeId && 
+               doc.sourceType === 'url' && 
+               doc.status === 'loading'
     );
   });
 
@@ -83,22 +85,12 @@ export class ViewerPageComponent implements OnDestroy {
   });
 
   private tapZoneObserver?: MutationObserver;
-  private initialPageFromHash?: number;
-  private hashApplied = false;
+  private autoDisabledNavigation = false; // Track if navigation was auto-disabled on zoom
 
   constructor() {
-    console.log('[viewer] === DEBUG: Construtor iniciado ===');
-    console.log('[viewer] URL atual:', window.location.href);
-    console.log('[viewer] Hash atual:', window.location.hash);
-    
-    this.extractPageFromHash();
-    
     this.watchQueryParams();
-    this.prefetchBackgroundDocuments();
     this.resetPaginationOnDocumentChange();
     this.watchViewerSettingsChanges();
-    
-    console.log('[viewer] === DEBUG: Construtor finalizado ===');
   }
 
   protected retry(): void {
@@ -119,6 +111,8 @@ export class ViewerPageComponent implements OnDestroy {
   }
 
   protected togglePageNavigationButtons(): void {
+    // Clear auto-disabled flag when user manually toggles
+    this.autoDisabledNavigation = false;
     this.viewerSettings.togglePageNavigationButtons();
   }
 
@@ -142,39 +136,27 @@ export class ViewerPageComponent implements OnDestroy {
   }
 
   protected onPdfLoaded(docId: string, event: PdfLoadedEvent): void {
-    console.log('[viewer] === DEBUG: PDF Carregado ===');
-    console.log('[viewer] docId:', docId);
-    console.log('[viewer] event:', event);
+    const doc = this.state().documents.find(d => d.id === docId);
+    console.log('[PDF-LOADED]', {
+      docId,
+      docName: doc?.name,
+      pagesCount: event.pagesCount,
+      isActive: docId === this.state().activeId,
+      allDocs: this.state().documents.map(d => ({ name: d.name, id: d.id, status: d.status }))
+    });
     
     this.viewerState.markDocumentReady(docId, { pageCount: event.pagesCount });
-    const rawPagesCount: unknown = (event as { pagesCount?: unknown }).pagesCount;
-    const rawPageNumber: unknown = (event as { pageNumber?: unknown }).pageNumber;
-
-    const totalPages = typeof rawPagesCount === 'number' ? rawPagesCount : this.totalPages;
-    const pageNumber = typeof rawPageNumber === 'number' ? rawPageNumber : 1;
-
-    console.log('[viewer] totalPages:', totalPages);
-    console.log('[viewer] pageNumber padrão:', pageNumber);
-    console.log('[viewer] initialPageFromHash:', this.initialPageFromHash);
-
+    
+    const totalPages = event.pagesCount;
+    
     this.totalPages = totalPages;
     
-    // Se temos uma página inicial do hash e ela é válida, usar ela
-    if (this.initialPageFromHash && this.initialPageFromHash <= totalPages && !this.hashApplied) {
-      this.currentPage = this.initialPageFromHash;
-      this.hashApplied = true;
-      console.log('[viewer] ✅ Usando página inicial do hash:', this.initialPageFromHash);
-      this.initialPageFromHash = undefined; // Limpar após usar
+    // Usar initialPage do documento
+    if (doc?.initialPage && doc.initialPage <= totalPages) {
+      this.currentPage = doc.initialPage;
     } else {
-      this.currentPage = pageNumber;
-      console.log('[viewer] ⚠️ Usando página padrão:', pageNumber);
-      if (this.initialPageFromHash && !this.hashApplied) {
-        console.log('[viewer] ❌ Página do hash inválida ou maior que total:', this.initialPageFromHash, '>', totalPages);
-      }
+      this.currentPage = 1;
     }
-
-    console.log('[viewer] currentPage final:', this.currentPage);
-    console.log('[viewer] === DEBUG: PDF Carregado - Fim ===');
 
     if (this.activeDocument()?.id === docId) {
       this.updatePageTapZones();
@@ -197,12 +179,44 @@ export class ViewerPageComponent implements OnDestroy {
     this.updatePageTapZones();
   }
 
+  protected onZoomChange(zoom: string | number | undefined): void {
+    const settings = this.viewerSettingsSnapshot();
+    
+    // Only auto-disable if feature is enabled in settings
+    if (!settings.autoDisableNavigationOnZoom) {
+      return;
+    }
+    
+    const isPageWidth = this.isPageWidthZoom(zoom);
+    
+    if (!isPageWidth) {
+      // User zoomed - auto-disable if currently enabled
+      if (settings.showPageNavigationButtons) {
+        this.autoDisabledNavigation = true;
+        this.viewerSettings.updateSettings({ showPageNavigationButtons: false });
+      }
+    } else {
+      // Back to page-width - re-enable if we auto-disabled
+      if (this.autoDisabledNavigation) {
+        this.autoDisabledNavigation = false;
+        this.viewerSettings.updateSettings({ showPageNavigationButtons: true });
+      }
+    }
+  }
+
+  private isPageWidthZoom(zoomLevel: string | number | undefined): boolean {
+    if (!zoomLevel) return true; // Consider undefined as page-width (default)
+    return zoomLevel === 'auto' || zoomLevel === 'page-width';
+  }
+
   protected getDocumentSource(doc: ViewerDocument): string | File {
     if (doc.sourceType === 'file') {
       return doc.file!;
     }
 
-    return appendTimestampToUrl(doc.url ?? '', doc.lastUpdatedAt);
+    // Retornar URL diretamente sem timestamp para evitar re-renderização infinita
+    // O timestamp será adicionado apenas quando necessário
+    return doc.url ?? '';
   }
 
   private syncQueryParams(): void {
@@ -232,6 +246,10 @@ export class ViewerPageComponent implements OnDestroy {
 
   private watchQueryParams(): void {
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      console.log('[WATCH-PARAMS] All params:', params.keys);
+      console.log('[WATCH-PARAMS] urls param:', params.get('urls'));
+      console.log('[WATCH-PARAMS] url param:', params.get('url'));
+      
       if (this.paramSyncSuppressed()) {
         return;
       }
@@ -269,13 +287,37 @@ export class ViewerPageComponent implements OnDestroy {
   private prefetchBackgroundDocuments(): void {
     effect(() => {
       const docs = this.state();
-      docs.documents.forEach((doc) => {
+      const activeDoc = docs.documents.find(d => d.id === docs.activeId);
+      
+      console.log('[PREFETCH] Active doc:', activeDoc?.name, 'Status:', activeDoc?.status);
+      
+      // NÃO carregar nenhum documento de background se o ativo ainda está loading
+      if (activeDoc?.status === 'loading') {
+        console.log('[PREFETCH] Active still loading, skip background');
+        return;
+      }
+      
+      // Carregar apenas 1 documento por vez para evitar conflito de IDs no DOM
+      let hasLoadingBackground = false;
+      
+      docs.documents.forEach((doc, index) => {
         if (doc.id === docs.activeId) {
+          console.log(`[PREFETCH] Doc ${index}: Skip (active)`, doc.name);
           return;
         }
 
-        if (doc.sourceType === 'url' && doc.status === 'idle') {
+        // Se já há um documento de background carregando, não iniciar outro
+        if (doc.sourceType === 'url' && doc.status === 'loading') {
+          hasLoadingBackground = true;
+          console.log(`[PREFETCH] Doc ${index}: Already loading`, doc.name);
+        }
+
+        if (doc.sourceType === 'url' && doc.status === 'idle' && !hasLoadingBackground) {
+          console.log(`[PREFETCH] Doc ${index}: Mark as loading`, doc.name, doc.id);
           this.viewerState.markDocumentLoading(doc.id);
+          hasLoadingBackground = true;
+        } else if (doc.status === 'idle') {
+          console.log(`[PREFETCH] Doc ${index}: Skip (waiting)`, doc.name);
         }
       });
     });
@@ -283,40 +325,25 @@ export class ViewerPageComponent implements OnDestroy {
 
   private resetPaginationOnDocumentChange(): void {
     effect(() => {
-      console.log('[viewer] === DEBUG: Reset Pagination ===');
       const doc = this.activeDocument();
-      console.log('[viewer] activeDocument:', doc);
-      console.log('[viewer] hashApplied:', this.hashApplied);
       
       if (!doc) {
-        console.log('[viewer] Nenhum documento ativo, resetando para página 1');
         this.currentPage = 1;
         this.totalPages = 0;
-        this.hashApplied = false; // Reset flag quando não há documento
         return;
       }
 
-      console.log('[viewer] initialPageFromHash:', this.initialPageFromHash);
-      console.log('[viewer] doc.pageCount:', doc.pageCount);
-      
-      // Se já aplicamos o hash, não fazer nada
-      if (this.hashApplied) {
-        console.log('[viewer] Hash já aplicado, mantendo estado atual');
-        this.totalPages = doc.pageCount ?? 0;
-        this.updatePageTapZones();
-        console.log('[viewer] === DEBUG: Reset Pagination - Fim (Hash já aplicado) ===');
-        return;
+      // Usar initialPage se disponível e documento ainda não carregado
+      if (doc.initialPage && doc.status !== 'ready') {
+        this.currentPage = doc.initialPage;
+      } else if (doc.status === 'ready') {
+        // Manter página atual se já carregado
+      } else {
+        this.currentPage = 1;
       }
       
-      // Definir apenas totalPages, não currentPage
       this.totalPages = doc.pageCount ?? 0;
-      
-      console.log('[viewer] totalPages definido:', this.totalPages);
-      console.log('[viewer] currentPage mantido:', this.currentPage);
-      
       this.updatePageTapZones();
-      
-      console.log('[viewer] === DEBUG: Reset Pagination - Fim ===');
     });
   }
 
@@ -399,21 +426,20 @@ export class ViewerPageComponent implements OnDestroy {
     zone.style.cursor = 'pointer';
     zone.style.zIndex = '2';
 
-    // Apply visibility settings
+    // Apply functionality settings - zones are always invisible
+    zone.style.display = 'block';
+    zone.style.opacity = '0'; // Always invisible
+    zone.style.background = 'transparent';
+    zone.style.borderRadius = '8px';
+    
     if (settings.showPageNavigationButtons) {
-      zone.style.display = 'block';
-      zone.style.opacity = '1';
+      // Enabled: invisible but functional
       zone.style.pointerEvents = 'auto';
-      zone.style.background = 'rgba(0, 0, 0, 0.1)';
-      zone.style.borderRadius = '8px';
-      zone.style.transition = 'background-color 150ms ease-in-out';
-      zone.classList.add('viewer__page-tap-zone--visible');
+      zone.classList.add('viewer__page-tap-zone--enabled');
     } else {
-      zone.style.display = 'block'; // Manter no DOM
-      zone.style.opacity = '0'; // Esconder visualmente mas manter clicável
-      zone.style.pointerEvents = 'auto'; // Manter funcionalidade sempre ativa
-      zone.style.background = 'transparent'; // Sem fundo quando invisível
-      zone.classList.remove('viewer__page-tap-zone--visible');
+      // Disabled: invisible and non-functional
+      zone.style.pointerEvents = 'none';
+      zone.classList.remove('viewer__page-tap-zone--enabled');
     }
 
     const horizontal = zone.dataset['viewerTapZoneHorizontal'] as 'left' | 'right' | undefined;
@@ -508,17 +534,25 @@ export class ViewerPageComponent implements OnDestroy {
       const secondaryToolbar = host.querySelector('#secondaryToolbar') || host.querySelector('.secondaryToolbar');
       
       if (toolbar || secondaryToolbar) {
-        console.log('[PDF Viewer] Toolbar encontrado:', toolbar);
-        console.log('[PDF Viewer] Estrutura do toolbar:', toolbar?.innerHTML);
         this.injectCustomMenuItems(host);
+        this.setupSettingsChangeListener(host);
       } else {
-        console.log('[PDF Viewer] Aguardando toolbar...');
         // Tentar novamente após um tempo
         setTimeout(checkForMenu, 500);
       }
     };
 
     checkForMenu();
+  }
+
+  private setupSettingsChangeListener(host: HTMLElement): void {
+    // Listen for settings changes and update button visual state
+    this.viewerSettings.settings$.subscribe(() => {
+      const toggleButton = host.querySelector('[data-viewer-nav-toggle="true"]') as HTMLElement;
+      if (toggleButton) {
+        this.updateToggleButtonVisualState(toggleButton);
+      }
+    });
   }
 
   private injectCustomMenuItems(host: HTMLElement): void {
@@ -541,10 +575,17 @@ export class ViewerPageComponent implements OnDestroy {
     const toolbar = host.querySelector('#toolbarContainer') || host.querySelector('.toolbar');
     if (!toolbar) return;
 
-    // Verificar se já adicionamos o botão
-    if (toolbar.querySelector('.viewer__custom-nav-button')) return;
-
-    console.log('[PDF Viewer] Procurando elementos de referência...');
+    // Remover botões existentes para evitar duplicatas
+    const existingNavButton = toolbar.querySelector('.viewer__custom-nav-button');
+    const existingSettingsButton = toolbar.querySelector('.viewer__custom-settings-button');
+    
+    if (existingNavButton) {
+      existingNavButton.remove();
+    }
+    
+    if (existingSettingsButton) {
+      existingSettingsButton.remove();
+    }
 
     // Encontrar elementos de referência para posicionamento
     const hamburgerButton = toolbar.querySelector('#sidebarToggle') || 
@@ -567,44 +608,57 @@ export class ViewerPageComponent implements OnDestroy {
                         toolbar.querySelector('button[id*="Find"]') ||
                         toolbar.querySelector('button[id*="Search"]');
 
-    console.log('[PDF Viewer] Hamburger button:', hamburgerButton);
-    console.log('[PDF Viewer] Search button:', searchButton);
-    
-    // Debug: listar todos os botões disponíveis
-    const allButtons = toolbar.querySelectorAll('button, pdf-shy-button');
-    console.log('[PDF Viewer] Todos os botões encontrados:', allButtons);
-    allButtons.forEach((btn, index) => {
-      const htmlBtn = btn as HTMLElement;
-      console.log(`[PDF Viewer] Botão ${index}:`, {
-        id: htmlBtn.id,
-        title: htmlBtn.title,
-        className: htmlBtn.className,
-        tagName: htmlBtn.tagName,
-        l10nid: htmlBtn.getAttribute('l10nid'),
-        innerHTML: htmlBtn.innerHTML.substring(0, 100) + '...'
-      });
-    });
+    // Encontrar botão de Desenho (Drawing/Annotation)
+    const drawingButton = toolbar.querySelector('#editorFreeText') ||
+                         toolbar.querySelector('#editorInk') ||
+                         toolbar.querySelector('[title*="Desenho"]') ||
+                         toolbar.querySelector('[title*="Drawing"]') ||
+                         toolbar.querySelector('[title*="Annotation"]') ||
+                         toolbar.querySelector('[title*="Anotação"]') ||
+                         toolbar.querySelector('button[aria-label*="draw"]') ||
+                         toolbar.querySelector('button[aria-label*="annotation"]');
+
+    // Encontrar botão de Ferramentas (Tools)
+    const toolsButton = toolbar.querySelector('#secondaryToolbarToggle') ||
+                       toolbar.querySelector('[title*="Ferramentas"]') ||
+                       toolbar.querySelector('[title*="Tools"]') ||
+                       toolbar.querySelector('[title*="More"]') ||
+                               toolbar.querySelector('button[aria-label*="tools"]') ||
+                               toolbar.querySelector('button[aria-label*="more"]');
 
     // Criar botão toggle único
     const toggleButton = this.createToggleButton();
+    
+    // Criar botão de configurações
+    const settingsButton = this.createSettingsButton();
 
-    // Posicionar de forma mais simples e segura
-    if (hamburgerButton && hamburgerButton.parentNode) {
-      console.log('[PDF Viewer] Inserindo à direita do hamburger');
-      // Inserir logo após o hamburger
-      hamburgerButton.parentNode.insertBefore(toggleButton, hamburgerButton.nextSibling);
+    // Posicionar entre Desenho e Ferramentas (posição mais intuitiva)
+    if (drawingButton && toolsButton && drawingButton.parentNode === toolsButton.parentNode && drawingButton.parentNode) {
+      // Verificar se são filhos do mesmo pai antes de inserir
+      const parent = drawingButton.parentNode;
+      parent.insertBefore(toggleButton, toolsButton);
+      parent.insertBefore(settingsButton, toolsButton);
+    } else if (drawingButton && drawingButton.parentNode) {
+      // Se não encontrar Ferramentas ou forem de pais diferentes, inserir após Desenho
+      const parent = drawingButton.parentNode;
+      parent.insertBefore(toggleButton, drawingButton.nextSibling);
+      parent.insertBefore(settingsButton, toggleButton.nextSibling);
+    } else if (hamburgerButton && hamburgerButton.parentNode) {
+      // Fallback: inserir logo após o hamburger
+      const parent = hamburgerButton.parentNode;
+      parent.insertBefore(toggleButton, hamburgerButton.nextSibling);
+      parent.insertBefore(settingsButton, toggleButton.nextSibling);
     } else {
-      console.log('[PDF Viewer] Fallback: inserindo no início do toolbar');
-      // Fallback: inserir no início do toolbar
+      // Fallback final: inserir no início do toolbar
       const toolbarViewer = toolbar.querySelector('#toolbarViewer') || toolbar.querySelector('.toolbarViewer');
       if (toolbarViewer) {
         toolbarViewer.insertBefore(toggleButton, toolbarViewer.firstChild);
+        toolbarViewer.insertBefore(settingsButton, toggleButton.nextSibling);
       } else {
         toolbar.insertBefore(toggleButton, toolbar.firstChild);
+        toolbar.insertBefore(settingsButton, toggleButton.nextSibling);
       }
     }
-
-    console.log('[PDF Viewer] Botão criado e inserido:', toggleButton);
   }
 
   private createCustomMenuButton(host: HTMLElement): void {
@@ -650,16 +704,18 @@ export class ViewerPageComponent implements OnDestroy {
   private createToggleButton(): HTMLElement {
     const button = document.createElement('button');
     button.className = 'toolbarButton viewer__custom-nav-button';
-    button.title = 'Atalhos de navegação';
+    button.title = 'Navegação por cantos';
+    button.dataset['viewerNavToggle'] = 'true';
     
-    const isActive = this.viewerSettingsSnapshot().showPageNavigationButtons;
+    const settings = this.viewerSettingsSnapshot();
+    const isActive = settings.showPageNavigationButtons;
     
-    // Usar ícone mais simples e visível
+    // Usar ícone de setas bidirecionais
     const iconSpan = document.createElement('span');
     iconSpan.className = 'toolbarButtonIcon';
     
-    // Usar ícone Unicode mais simples
-    iconSpan.textContent = '📄';
+    // Usar ícone de setas bidirecionais ⇄
+    iconSpan.textContent = '⇄';
     iconSpan.style.cssText = `
       font-size: 16px;
       line-height: 1;
@@ -709,15 +765,192 @@ export class ViewerPageComponent implements OnDestroy {
       
              // Atualizar estado visual
              setTimeout(() => {
-               const newState = this.viewerSettingsSnapshot();
-               button.style.background = newState.showPageNavigationButtons ? 'rgba(212, 175, 55, 0.3)' : 'transparent';
-               
-               // Atualizar tooltip
-               button.title = newState.showPageNavigationButtons ? 'Ocultar atalhos de navegação' : 'Mostrar atalhos de navegação';
+               this.updateToggleButtonVisualState(button);
              }, 100);
     });
 
     return button;
+  }
+
+  private updateToggleButtonVisualState(button: HTMLElement): void {
+    const newState = this.viewerSettingsSnapshot();
+    button.style.background = newState.showPageNavigationButtons ? 'rgba(212, 175, 55, 0.3)' : 'transparent';
+    
+    // Atualizar tooltip
+    button.title = newState.showPageNavigationButtons ? 'Desabilitar navegação por cantos' : 'Habilitar navegação por cantos';
+  }
+
+  private createSettingsButton(): HTMLElement {
+    const button = document.createElement('button');
+    button.className = 'toolbarButton viewer__custom-settings-button';
+    button.title = 'Configurações de navegação';
+    button.dataset['viewerSettingsButton'] = 'true';
+    
+    // Usar ícone de três pontos horizontais
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'toolbarButtonIcon';
+    iconSpan.textContent = '⋯';
+    iconSpan.style.cssText = `
+      font-size: 16px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    `;
+
+    button.appendChild(iconSpan);
+
+    // Aplicar estilos similares aos botões nativos
+    button.style.cssText = `
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 150ms ease-in-out;
+      padding: 0;
+      margin: 0 4px;
+      width: 28px;
+      height: 28px;
+      display: inline-block;
+      vertical-align: top;
+      box-sizing: border-box;
+      position: relative;
+    `;
+
+    // Adicionar hover effect
+    button.addEventListener('mouseenter', () => {
+      button.style.background = 'rgba(255, 255, 255, 0.1)';
+    });
+
+    button.addEventListener('mouseleave', () => {
+      button.style.background = 'transparent';
+    });
+
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.toggleSettingsMenu(button);
+    });
+
+    return button;
+  }
+
+  private toggleSettingsMenu(button: HTMLElement): void {
+    // Verificar se já existe um menu
+    const existingMenu = document.querySelector('.viewer__settings-menu');
+    if (existingMenu) {
+      existingMenu.remove();
+      return;
+    }
+
+    // Criar menu de configurações
+    const menu = document.createElement('div');
+    menu.className = 'viewer__settings-menu';
+    menu.style.cssText = `
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 4px;
+      background: white;
+      border: 1px solid rgba(0, 0, 0, 0.2);
+      border-radius: 4px;
+      padding: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      z-index: 1000;
+      min-width: 250px;
+      font-size: 13px;
+      color: #333;
+    `;
+
+    const settings = this.viewerSettingsSnapshot();
+
+    // Criar checkbox para auto-disable
+    const label = document.createElement('label');
+    label.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      padding: 4px;
+      user-select: none;
+    `;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = settings.autoDisableNavigationOnZoom;
+    checkbox.style.cssText = `
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+    `;
+
+    const labelText = document.createElement('span');
+    labelText.textContent = 'Desabilitar navegação ao dar zoom';
+    labelText.style.cssText = `
+      flex: 1;
+    `;
+
+    label.appendChild(checkbox);
+    label.appendChild(labelText);
+    menu.appendChild(label);
+
+    // Posicionar menu relativo ao botão com detecção de overflow
+    const buttonRect = button.getBoundingClientRect();
+    const menuWidth = 250; // min-width definido no CSS
+    const menuHeight = 60; // Altura estimada do menu
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    
+    // Calcular posição X para evitar overflow horizontal
+    let menuLeft = buttonRect.left;
+    if (menuLeft + menuWidth > viewportWidth) {
+      // Se vai sair pela direita, alinhar à direita do botão
+      menuLeft = buttonRect.right - menuWidth;
+    }
+    
+    // Garantir que não saia pela esquerda
+    if (menuLeft < 0) {
+      menuLeft = 8; // Margem mínima da borda
+    }
+    
+    // Calcular posição Y para evitar overflow vertical
+    let menuTop = buttonRect.bottom + 4;
+    if (menuTop + menuHeight > viewportHeight) {
+      // Se vai sair por baixo, mostrar acima do botão
+      menuTop = buttonRect.top - menuHeight - 4;
+    }
+    
+    menu.style.position = 'fixed';
+    menu.style.top = `${menuTop}px`;
+    menu.style.left = `${menuLeft}px`;
+
+    // Adicionar event listener para checkbox
+    checkbox.addEventListener('change', () => {
+      this.ngZone.run(() => {
+        this.viewerSettings.updateSettings({ 
+          autoDisableNavigationOnZoom: checkbox.checked 
+        });
+      });
+    });
+
+    // Fechar menu ao clicar fora
+    const closeMenu = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node) && e.target !== button) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+    }, 0);
+
+    document.body.appendChild(menu);
   }
 
   private toggleCustomNavigationMenu(host: HTMLElement): void {
@@ -725,66 +958,6 @@ export class ViewerPageComponent implements OnDestroy {
     console.log('Toggle custom navigation menu');
   }
 
-  private extractPageFromHash(): void {
-    // Capturar o hash da URL antes do Angular Router processar
-    console.log('[viewer] === DEBUG: Iniciando extração de hash ===');
-    console.log('[viewer] window.location:', window.location);
-    console.log('[viewer] window.location.href:', window.location.href);
-    console.log('[viewer] window.location.hash:', window.location.hash);
-    
-    // Tentar diferentes formas de acessar o hash
-    try {
-      // Método 1: window.location.hash
-      let hash = window.location.hash;
-      console.log('[viewer] Método 1 - window.location.hash:', hash);
-      
-      // Método 2: Extrair da URL completa
-      if (!hash || hash === '') {
-        const urlParts = window.location.href.split('#');
-        if (urlParts.length > 1) {
-          hash = '#' + urlParts[1];
-          console.log('[viewer] Método 2 - Extraído da URL:', hash);
-        }
-      }
-      
-      // Método 3: Usar document.location se window.location falhar
-      if (!hash || hash === '') {
-        try {
-          hash = document.location.hash;
-          console.log('[viewer] Método 3 - document.location.hash:', hash);
-        } catch (e) {
-          console.log('[viewer] Método 3 falhou:', e);
-        }
-      }
-      
-      console.log('[viewer] Hash final extraído:', hash);
-      console.log('[viewer] Tipo do hash:', typeof hash);
-      console.log('[viewer] Hash length:', hash?.length);
-      
-      if (hash && hash.startsWith('#page=')) {
-        const pageStr = hash.substring(6);
-        console.log('[viewer] String da página extraída:', pageStr);
-        const pageNumber = parseInt(pageStr, 10);
-        console.log('[viewer] Número da página convertido:', pageNumber);
-        console.log('[viewer] É número válido?', !isNaN(pageNumber));
-        console.log('[viewer] É maior que 0?', pageNumber > 0);
-        
-        if (!isNaN(pageNumber) && pageNumber > 0) {
-          this.initialPageFromHash = pageNumber;
-          console.log('[viewer] ✅ Página inicial definida:', pageNumber);
-        } else {
-          console.log('[viewer] ❌ Página inválida:', pageNumber);
-        }
-      } else {
-        console.log('[viewer] ❌ Hash não contém #page= ou está vazio');
-        console.log('[viewer] Hash atual:', hash);
-      }
-    } catch (error) {
-      console.error('[viewer] ❌ Erro ao extrair hash:', error);
-    }
-    
-    console.log('[viewer] === DEBUG: Finalizando extração de hash ===');
-  }
 
   ngOnDestroy(): void {
     this.tapZoneObserver?.disconnect();
@@ -793,15 +966,46 @@ export class ViewerPageComponent implements OnDestroy {
 }
 
 function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): string[] {
+  console.log('[PARSE-URLS] Raw urlsParam:', urlsParam);
+  console.log('[PARSE-URLS] fallbackUrl:', fallbackUrl);
+  
   const values: string[] = [];
 
   if (urlsParam) {
-    values.push(...urlsParam.split(/[|,]/));
+    let decoded = urlsParam;
+    
+    // Verificar se está em Base64
+    // Base64 tem apenas caracteres [A-Za-z0-9+/=] e não contém :// (URLs têm)
+    const isBase64 = /^[A-Za-z0-9+/=]+$/.test(urlsParam);
+    
+    if (isBase64) {
+      try {
+        // Decodificar de Base64
+        decoded = atob(urlsParam);
+        console.log('[PARSE-URLS] Decoded from Base64:', decoded);
+      } catch (e) {
+        console.error('[PARSE-URLS] Failed to decode Base64:', e);
+        // Se falhar, tentar usar como URL normal
+        decoded = decodeURIComponent(urlsParam);
+      }
+    } else {
+      // Não é Base64, fazer decode normal
+      decoded = decodeURIComponent(urlsParam);
+      console.log('[PARSE-URLS] Decoded from URI:', decoded);
+    }
+    
+    const split = decoded.split(/[|,]/);
+    console.log('[PARSE-URLS] After split:', split);
+    
+    values.push(...split);
   } else if (fallbackUrl) {
     values.push(fallbackUrl);
   }
 
-  return values.map((value) => value.trim()).filter(Boolean);
+  const result = values.map((value) => value.trim()).filter(Boolean);
+  console.log('[PARSE-URLS] Final result:', result);
+  
+  return result;
 }
 
 function appendTimestampToUrl(url: string, timestamp: number): string {
