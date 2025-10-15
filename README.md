@@ -63,8 +63,16 @@ export class YourComponent {
 
 #### Option B: Query Parameters (Best for Shareable URLs)
 
-**With Base64 encoding (recommended for multiple URLs):**
+**Single PDF with Base64 encoding:**
+```javascript
+// Encode single URL in Base64
+const url = 'https://example.com/doc1.pdf#page=1';
+const base64Url = btoa(url);
+console.log(base64Url);
+// Navigate to: /viewer?url={base64Url}
+```
 
+**Multiple PDFs with Base64 encoding:**
 ```javascript
 // Encode URLs in Base64
 const urls = 'https://example.com/doc1.pdf#page=1,https://example.com/doc2.pdf#page=277';
@@ -73,17 +81,18 @@ console.log(base64Urls);
 // Navigate to: /viewer?urls={base64Urls}
 ```
 
-**Example Base64 URL:**
+**Example Base64 URLs:**
 ```
+# Single PDF
+https://localhost:4200/?url=aHR0cHM6Ly9jb2xldGFuZWFkaWdpdGFsaWNtLmdpdGh1Yi5pby9jaWFzL3BkZi9jb2xldGFuZWEvMjNjMDZiNTctYWFjYS00ODNiLTk1M2QtNzI3NjYxMDMxMTQ1LnBkZiNwYWdlPTE=
+
+# Multiple PDFs
 https://localhost:4200/?urls=aHR0cHM6Ly9jb2xldGFuZWFkaWdpdGFsaWNtLmdpdGh1Yi5pby9jaWFzL3BkZi9jb2xldGFuZWEvMjNjMDZiNTctYWFjYS00ODNiLTk1M2QtNzI3NjYxMDMxMTQ1LnBkZiNwYWdlPTEsaHR0cHM6Ly9qYWlyb2ZpbGhvNzkuZ2l0aHViLmlvL2F2dWxzb3MtY2lmcmFkb3Mvc291cmNlcy8yMDI1IEdMIEFWVUxTT1MucGRmI3BhZ2U9Mjc3
 ```
 
 This will load 2 PDFs: first at page 1, second at page 277.
 
-**With pipe separator:**
-```
-/viewer?urls=https://example.com/doc1.pdf#page=1|https://example.com/doc2.pdf#page=277
-```
+**Note:** Both `?url` and `?urls` parameters now use Base64 encoding for consistency and to avoid URL parsing issues with special characters.
 
 #### Option C: Both (Most Flexible)
 
