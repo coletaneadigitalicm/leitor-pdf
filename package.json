@@ -1,55 +1,62 @@
 {
-  "name": "pdf-reader",
+  "name": "leitor-pdf-app",
   "version": "0.0.0",
   "scripts": {
     "ng": "ng",
-  "start": "ng serve --ssl --host 0.0.0.0",
+    "start": "ng serve --ssl --host 0.0.0.0",
     "build": "ng build",
+    "build:prod": "ng build --configuration production --base-href /leitor-pdf/",
+    "deploy": "ng build --configuration production --base-href /leitor-pdf/ && npx angular-cli-ghpages --dir=dist/leitor-pdf-app/browser",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "build:prod": "ng build --configuration production --base-href /leitor-pdf/",
-    "deploy": "ng build --configuration production --base-href /leitor-pdf/ && npx angular-cli-ghpages --dir=dist/pdf-reader/browser"
-  },
-  "prettier": {
-    "printWidth": 100,
-    "singleQuote": true,
-    "overrides": [
-      {
-        "files": "*.html",
-        "options": {
-          "parser": "angular"
-        }
-      }
-    ]
+    "lint": "ng lint",
+    "format": "prettier --write \"src/**/*.{ts,html,scss,css}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,html,scss,css}\""
   },
   "private": true,
   "dependencies": {
-    "@angular/cdk": "^20.2.5",
-    "@angular/common": "^20.3.0",
-    "@angular/compiler": "^20.3.0",
-    "@angular/core": "^20.3.0",
-    "@angular/forms": "^20.3.0",
-    "@angular/platform-browser": "^20.3.0",
-    "@angular/router": "^20.3.0",
-    "hammerjs": "^2.0.8",
-    "ng2-pdfjs-viewer": "^25.0.9",
-    "pdfjs-dist": "^5.4.149",
+    "@angular/common": "^20.0.0",
+    "@angular/compiler": "^20.0.0",
+    "@angular/core": "^20.0.0",
+    "@angular/forms": "^20.0.0",
+    "@angular/platform-browser": "^20.0.0",
+    "@angular/router": "^20.0.0",
+    "@fontsource/eb-garamond": "^5.2.7",
+    "@fontsource/open-sans": "^5.2.7",
+    "ngx-extended-pdf-viewer": "^24.2.5",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
     "zone.js": "~0.15.0"
   },
   "devDependencies": {
-    "@angular/build": "^20.3.3",
-    "@angular/cli": "^20.3.3",
-    "@angular/compiler-cli": "^20.3.0",
+    "@angular-eslint/utils": "^20.3.0",
+    "@angular/build": "^20.0.0",
+    "@angular/cli": "^20.0.0",
+    "@angular/compiler-cli": "^20.0.0",
     "@types/jasmine": "~5.1.0",
     "angular-cli-ghpages": "^2.0.3",
-    "jasmine-core": "~5.9.0",
+    "angular-eslint": "20.3.0",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "husky": "^9.1.7",
+    "jasmine-core": "~5.7.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
-    "typescript": "~5.9.2"
+    "lint-staged": "^16.2.3",
+    "prettier": "^3.6.2",
+    "typescript": "~5.8.2",
+    "typescript-eslint": "8.40.0"
+  },
+  "lint-staged": {
+    "*.{ts,js,mjs,cjs}": [
+      "eslint --max-warnings=0"
+    ],
+    "*.{html,scss,css,md,json}": [
+      "prettier --check"
+    ]
   }
 }

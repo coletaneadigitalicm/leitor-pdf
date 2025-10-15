@@ -1,0 +1,133 @@
+:host {
+  display: block;
+  min-height: 100vh;
+  color: var(--text-light);
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--background-color);
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+.app-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-4);
+  background: rgba(40, 20, 18, 0.75);
+  border-bottom: 2px solid var(--gold-color);
+  height: var(--toolbar-height-desktop, 80px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(18px);
+}
+
+.app-toolbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.app-toolbar__badge {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background-color: rgba(212, 175, 55, 0.18);
+  border: 1px solid rgba(212, 175, 55, 0.6);
+  color: var(--gold-color);
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.app-toolbar__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.app-toolbar__eyebrow {
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(255, 248, 225, 0.7);
+}
+
+.app-toolbar__title {
+  font-family: var(--font-title);
+  color: var(--text-light);
+  font-size: clamp(1.35rem, 1.2rem + 0.5vw, 1.75rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.app-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.app-toolbar__tag {
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(255, 248, 225, 0.18);
+  color: var(--text-light);
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.app-shell__body {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-4) var(--spacing-2);
+}
+
+.app-shell__surface {
+  width: min(100%, var(--content-max-width, 1200px));
+}
+
+
+@media (max-width: 1024px) {
+  .app-shell__body {
+    padding: var(--spacing-3);
+  }
+}
+
+@media (max-width: 768px) {
+  .app-toolbar {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    padding: var(--spacing-2);
+    height: var(--toolbar-height-mobile, 64px);
+  }
+
+  .app-shell__surface {
+    padding: var(--spacing-3);
+    min-height: calc(100vh - var(--toolbar-height-mobile, 64px));
+  }
+}
+
+@media (max-width: 540px) {
+  .app-toolbar__brand {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+
+  .app-toolbar__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .app-shell__body {
+    padding: var(--spacing-2);
+  }
+}

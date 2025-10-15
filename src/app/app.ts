@@ -1,13 +1,12 @@
-import { Component, signal } from '@angular/core';
+import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
-import { PdfViewerComponent } from './pdf-viewer/pdf-viewer.component';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, PdfViewerComponent],
+  imports: [RouterOutlet],
   templateUrl: './app.html',
-  styleUrl: './app.scss'
+  styleUrl: './app.scss',
 })
 export class App {
-  protected readonly title = signal('pdf-reader');
+  protected title = 'leitor-pdf-app';
 }

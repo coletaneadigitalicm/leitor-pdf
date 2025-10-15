@@ -1,0 +1,69 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+.home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  color: var(--text-dark);
+}
+
+.home__hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.home__eyebrow {
+  font-size: var(--font-size-caption);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--btn-background-color);
+}
+
+.home__description {
+  max-width: 48ch;
+  font-size: 1rem;
+  color: rgba(43, 33, 31, 0.85);
+}
+
+.home__grid {
+  display: grid;
+  gap: var(--spacing-3);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.home__card {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-3);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.home__card h2 {
+  font-size: var(--font-size-subtitle);
+  color: var(--title-color);
+}
+
+.home__meta {
+  font-size: var(--font-size-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--badge-blue-bg);
+}
+
+@media (max-width: 600px) {
+  .home__card {
+    padding: var(--spacing-2);
+  }
+
+  .home__description {
+    font-size: 0.95rem;
+  }
+}

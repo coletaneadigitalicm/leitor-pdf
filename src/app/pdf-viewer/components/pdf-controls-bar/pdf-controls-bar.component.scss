@@ -1,7 +1,0 @@
-@use '../../styles/pdf-controls-bar.shared' as controlsBar;
-
-:host {
-	display: block;
-}
-
-@include controlsBar.pdf-viewer-controls-bar-styles;

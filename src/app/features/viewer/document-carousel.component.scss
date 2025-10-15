@@ -1,0 +1,154 @@
+:host {
+  display: block;
+  width: 100%;
+}
+
+.carousel {
+  display: flex;
+  align-items: stretch;
+  gap: var(--spacing-1);
+  overflow-x: auto;
+  padding: var(--spacing-1);
+  background: rgba(43, 33, 31, 0.35);
+  border-radius: var(--radius-lg);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  scroll-snap-type: x proximity;
+}
+
+.carousel::-webkit-scrollbar {
+  height: 6px;
+}
+
+.carousel::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.55);
+  border-radius: 999px;
+}
+
+.carousel__chip {
+  position: relative;
+  min-width: 180px;
+  max-width: 240px;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(248, 243, 226, 0.12);
+  color: var(--text-light);
+  border: 1px solid rgba(212, 175, 55, 0.18);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  scroll-snap-align: start;
+  transition:
+    transform var(--transition-base),
+    box-shadow var(--transition-base);
+}
+
+.carousel__chip:focus-visible {
+  outline: 3px solid var(--gold-color);
+  outline-offset: 2px;
+}
+
+.carousel__chip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.35);
+}
+
+.carousel__chip--active {
+  background: linear-gradient(135deg, rgba(106, 59, 57, 0.9), rgba(75, 45, 43, 0.9));
+  border: 1px solid rgba(212, 175, 55, 0.6);
+  box-shadow: 0 14px 26px rgba(64, 32, 31, 0.45);
+}
+
+.carousel__chip--loading {
+  border-style: dashed;
+}
+
+.carousel__chip--error {
+  border-color: rgba(197, 29, 29, 0.6);
+  background: rgba(197, 29, 29, 0.2);
+}
+
+.carousel__content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.carousel__name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.carousel__meta {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  display: flex;
+  gap: 0.5rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.carousel__pages {
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.carousel__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+}
+
+.carousel__spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--gold-color);
+  border-radius: 50%;
+  animation: carousel-spin 0.7s linear infinite;
+}
+
+.carousel__close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text-light);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--transition-base),
+    transform var(--transition-base);
+}
+
+.carousel__close:hover {
+  background: rgba(0, 0, 0, 0.45);
+  transform: scale(1.05);
+}
+
+@keyframes carousel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .carousel__chip {
+    min-width: 160px;
+    padding-right: 2rem;
+  }
+}

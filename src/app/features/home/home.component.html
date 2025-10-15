@@ -1,0 +1,20 @@
+<section class="home">
+  <header class="home__hero">
+    <p class="home__eyebrow">Coletânea Digital</p>
+    <h1>Leitor 2.0 em construção</h1>
+    <p class="home__description">
+      Base pronta para evoluir com o novo fluxo de leitura de PDFs, mantendo o tema e a experiência
+      do produto atual.
+    </p>
+  </header>
+
+  <div class="home__grid" role="list">
+    @for (item of highlights; track item.title) {
+      <article class="home__card" role="listitem">
+        <h2>{{ item.title }}</h2>
+        <p>{{ item.description }}</p>
+        <span class="home__meta">{{ item.meta }}</span>
+      </article>
+    }
+  </div>
+</section>

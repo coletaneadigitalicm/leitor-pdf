@@ -1,0 +1,64 @@
+<section class="viewer">
+  <app-document-carousel
+    *ngIf="documents().length"
+    class="viewer__carousel"
+    [documents]="documents()"
+    [activeId]="state().activeId"
+    (selectDocument)="onDocumentSelected($event)"
+    (closeDocument)="onDocumentClosed($event)"
+  ></app-document-carousel>
+
+  <div class="viewer__status" *ngIf="hasError() && activeError() as errorMessage">
+    <div class="viewer__status-banner viewer__status-banner--error" role="alert">
+      <div class="viewer__status-icon" aria-hidden="true">!</div>
+      <div>
+        <p class="viewer__status-title">Não foi possível carregar o documento.</p>
+        <p class="viewer__status-message">{{ errorMessage }}</p>
+      </div>
+      <div class="viewer__status-actions">
+        <button type="button" class="ghost" (click)="retry()">Tentar novamente</button>
+        <button type="button" class="ghost ghost--light" (click)="clearError()">Limpar</button>
+      </div>
+    </div>
+  </div>
+
+  <ng-container *ngIf="hasDocuments(); else viewerEmpty">
+    <div #canvas class="viewer__canvas" *ngIf="activeDocument() as doc">
+      <ngx-extended-pdf-viewer
+        #pdfViewer
+        [page]="currentPage"
+        (pageChange)="onPageChange($event)"
+        [scrollMode]="pageScrollMode"
+        [src]="getDocumentSource(doc)"
+        [height]="'100vh'"
+        [showSidebarButton]="true"
+        [showFindButton]="true"
+        [showDownloadButton]="true"
+        [showPrintButton]="true"
+        [zoom]="'auto'"
+        [textLayer]="true"
+        (pdfLoaded)="onPdfLoaded(doc.id, $event)"
+        (pdfLoadingFailed)="onPdfLoadFailed(doc.id, $event)"
+        (zoomChange)="onZoomChange($event)"
+      ></ngx-extended-pdf-viewer>
+
+      <div class="viewer__overlay" *ngIf="isLoading()" aria-live="polite">
+        <div class="viewer__spinner" role="presentation"></div>
+        <p>Carregando documento...</p>
+      </div>
+    </div>
+  </ng-container>
+
+  <ng-template #viewerEmpty>
+    <div class="viewer__placeholder">
+      <h2>Selecione um PDF</h2>
+      <p>
+        Forneça URLs via query string &mdash; por exemplo <code>?urls=pdf1|pdf2</code> &mdash; para
+        carregar documentos automaticamente.
+      </p>
+    </div>
+  </ng-template>
+
+  <!-- Background loaders removidos - causam conflito de DOM IDs e erro de rendering -->
+  <!-- Documentos serão carregados apenas quando se tornarem ativos -->
+</section>
