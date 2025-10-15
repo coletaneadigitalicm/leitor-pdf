@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { distinctUntilChanged, map } from 'rxjs/operators';
 
-import { isValidHttpUrl } from '../utils/url.utils';
+import { isValidPdfUrl } from '../utils/url.utils';
 import {
   buildDocumentFromFile,
   buildDocumentFromUrl,
@@ -109,8 +109,8 @@ export class ViewerStateService {
     options?: { setActive?: boolean; prepend?: boolean },
   ): LoadResult {
     const url = rawUrl?.trim();
-    if (!isValidHttpUrl(url)) {
-      const error = 'URL inválida. Certifique-se de incluir http:// ou https://';
+    if (!isValidPdfUrl(url)) {
+      const error = 'URL inválida. Certifique-se de incluir http://, https:// ou blob://';
       return { success: false, error };
     }
 
@@ -338,7 +338,7 @@ export class ViewerStateService {
       const candidate = url.trim();
       const { baseUrl } = parseUrlWithFragment(candidate);
       
-      if (!candidate || !isValidHttpUrl(baseUrl) || seen.has(candidate)) {
+      if (!candidate || !isValidPdfUrl(baseUrl) || seen.has(candidate)) {
         continue;
       }
       

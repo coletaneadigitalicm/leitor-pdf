@@ -234,9 +234,17 @@ export class ViewerPageComponent implements OnDestroy {
     const activeId =
       activeDoc && activeDoc.sourceType === 'url' && activeDoc.url ? activeDoc.id : null;
 
+    // Usar Base64 para ambos os parâmetros para consistência
+    const urlsString = remoteUrls.length ? remoteUrls.join('|') : null;
+    const encodedUrls = urlsString ? btoa(urlsString) : null;
+    
+    // Para single URL, usar o primeiro URL se houver apenas um
+    const singleUrl = remoteUrls.length === 1 ? remoteUrls[0] : null;
+    const encodedSingleUrl = singleUrl ? btoa(singleUrl) : null;
+
     const queryParams: Record<string, string | null> = {
-      url: null,
-      urls: remoteUrls.length ? remoteUrls.join('|') : null,
+      url: encodedSingleUrl,
+      urls: encodedUrls,
       active: activeId,
     };
 
@@ -989,6 +997,7 @@ export class ViewerPageComponent implements OnDestroy {
 
 function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): string[] {
   console.log('[PARSE-URLS] Raw urlsParam:', urlsParam);
+  console.log('[PARSE-URLS] Raw fallbackUrl:', fallbackUrl);
   
   const values: string[] = [];
 
@@ -1026,7 +1035,32 @@ function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): s
     
     values.push(...split);
   } else if (fallbackUrl) {
-    values.push(fallbackUrl);
+    // Aplicar a mesma lógica de Base64 para o fallbackUrl (?url)
+    let decodedFallback = fallbackUrl;
+    
+    const looksLikeBase64 = !fallbackUrl.includes('://') && 
+                           /^[A-Za-z0-9+/=-]+$/.test(fallbackUrl) &&
+                           fallbackUrl.length > 20;
+    
+    if (looksLikeBase64) {
+      try {
+        decodedFallback = atob(fallbackUrl);
+        console.log('[PARSE-URLS] Decoded fallbackUrl from Base64:', decodedFallback);
+      } catch (e) {
+        console.error('[PARSE-URLS] Base64 decode failed for fallbackUrl:', e);
+        decodedFallback = fallbackUrl;
+      }
+    } else {
+      // Não é Base64, pode ser URL direta ou encoded
+      try {
+        decodedFallback = decodeURIComponent(fallbackUrl);
+        console.log('[PARSE-URLS] Decoded fallbackUrl from URI component');
+      } catch (e) {
+        decodedFallback = fallbackUrl;
+      }
+    }
+    
+    values.push(decodedFallback);
   }
 
   const result = values.map((value) => value.trim()).filter(Boolean);
