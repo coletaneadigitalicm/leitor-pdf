@@ -23,8 +23,10 @@ import {
 
 import { ViewerStateService } from '../../core/viewer/viewer-state.service';
 import { ViewerDocument } from '../../core/viewer/viewer-state.model';
-import { createInitialViewerState } from '../../core/viewer/viewer-state.util';
+import { createInitialViewerState, createDocumentIdFromUrl, parseUrlWithFragment } from '../../core/viewer/viewer-state.util';
 import { ViewerSettingsService } from '../../core/viewer/viewer-settings.service';
+import { PdfCacheService } from '../../core/viewer/pdf-cache.service';
+import { GitSubmoduleService } from '../../core/config/git-submodule.service';
 import { DocumentCarouselComponent } from './document-carousel.component';
 
 @Component({
@@ -37,12 +39,16 @@ import { DocumentCarouselComponent } from './document-carousel.component';
 export class ViewerPageComponent implements OnDestroy {
   // Inputs para uso programático (melhor para offline/service workers)
   @Input() urls?: string[];  // URLs to load
+  @Input() titles?: string[];  // Custom titles for documents
   @Input() activeDocumentId?: string;  // Which document to show initially
+  @Input() isGitSubmodule?: boolean;  // Hide toolbar when used as git submodule
   
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly viewerState = inject(ViewerStateService);
   private readonly viewerSettings = inject(ViewerSettingsService);
+  private readonly pdfCache = inject(PdfCacheService);
+  private readonly gitSubmodule = inject(GitSubmoduleService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly ngZone = inject(NgZone);
 
@@ -52,6 +58,7 @@ export class ViewerPageComponent implements OnDestroy {
   private readonly paramSyncSuppressed = signal(false);
 
   protected currentPage = 1;
+  protected currentZoom: string | number = 'auto';
   protected totalPages = 0;
   protected readonly pageScrollMode = ScrollModeType.page;
 
@@ -89,14 +96,119 @@ export class ViewerPageComponent implements OnDestroy {
     initialValue: this.viewerSettings.snapshot,
   });
 
+  // Computed signals for current document state
+  protected readonly currentDocPage = computed(() => {
+    const doc = this.activeDocument();
+    // Always use currentPage for immediate responsiveness
+    // The saved page will be applied when document loads via onPdfLoaded
+    return this.currentPage;
+  });
+
+  protected readonly currentDocZoom = computed(() => {
+    const doc = this.activeDocument();
+    // Always use currentZoom for immediate responsiveness
+    // The saved zoom will be applied when document loads via onPdfLoaded
+    return this.currentZoom;
+  });
+
   private tapZoneObserver?: MutationObserver;
   private autoDisabledNavigation = false; // Track if navigation was auto-disabled on zoom
+  private pendingStateUpdates = new Map<string, { page?: number; zoom?: string | number; scrollY?: number }>();
+
+  private applyStateUpdate(docId: string, state: { page?: number; zoom?: string | number; scrollY?: number }): void {
+    const doc = this.state().documents.find(d => d.id === docId);
+    
+    if (!doc) {
+      console.log('[STATE-UPDATE] Document not found, queuing update:', { docId, state });
+      this.pendingStateUpdates.set(docId, state);
+      return;
+    }
+    
+    if (doc.status !== 'ready') {
+      console.log('[STATE-UPDATE] Document not ready, queuing update:', { docId, docStatus: doc.status, state });
+      this.pendingStateUpdates.set(docId, state);
+      return;
+    }
+    
+    // Allow all state updates - the protection was causing rendering issues
+    // when navigating back to the initial page
+    
+    console.log('[STATE-UPDATE] Applying state update:', { docId, state });
+    this.viewerState.updateDocumentState(docId, state);
+  }
+
+  private processPendingStateUpdates(docId: string): void {
+    const pendingUpdate = this.pendingStateUpdates.get(docId);
+    if (pendingUpdate) {
+      console.log('[STATE-UPDATE] Processing pending update:', { docId, pendingUpdate });
+      this.viewerState.updateDocumentState(docId, pendingUpdate);
+      this.pendingStateUpdates.delete(docId);
+    }
+  }
+
+  private forceCanvasRefresh(): void {
+    const host = this.pdfViewerRef?.nativeElement;
+    if (!host) {
+      console.log('[CANVAS-FIX] No PDF viewer element found');
+      return;
+    }
+
+    // Find all canvas elements and force re-render
+    const canvases = host.querySelectorAll('canvas');
+    console.log('[CANVAS-FIX] Found', canvases.length, 'canvas elements');
+    
+    canvases.forEach((canvas, index) => {
+      console.log('[CANVAS-FIX] Refreshing canvas', index);
+      
+      // Force canvas to re-render by triggering a resize event
+      const event = new Event('resize', { bubbles: true });
+      canvas.dispatchEvent(event);
+      
+      // Alternative: Force redraw by accessing the canvas context
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Trigger a minimal redraw to force refresh
+        ctx.save();
+        ctx.restore();
+      }
+    });
+
+    // Also try to trigger PDF.js internal refresh
+    setTimeout(() => {
+      const pdfViewer = (host as any).pdfViewer;
+      if (pdfViewer) {
+        console.log('[CANVAS-FIX] Triggering PDF.js refresh for page', this.currentPage);
+        
+        // Method 1: Force page number update
+        if (pdfViewer.currentPageNumber !== this.currentPage) {
+          pdfViewer.currentPageNumber = this.currentPage;
+        }
+        
+        // Method 2: Force re-render of current page
+        if (pdfViewer._pages) {
+          const pageView = pdfViewer._pages[this.currentPage - 1];
+          if (pageView && pageView.canvas) {
+            console.log('[CANVAS-FIX] Found page view, forcing re-render');
+            pageView.update();
+          }
+        }
+        
+        // Method 3: Trigger scroll event to force refresh
+        const scrollContainer = host.querySelector('.scrollMode');
+        if (scrollContainer) {
+          const scrollEvent = new Event('scroll', { bubbles: true });
+          scrollContainer.dispatchEvent(scrollEvent);
+        }
+      }
+    }, 100);
+  }
 
   constructor() {
     this.watchInputChanges();
     this.watchQueryParams();
     this.resetPaginationOnDocumentChange();
     this.watchViewerSettingsChanges();
+    this.initializeGitSubmoduleMode();
   }
 
   protected retry(): void {
@@ -137,31 +249,109 @@ export class ViewerPageComponent implements OnDestroy {
   }
 
   protected onDocumentClosed(documentId: string): void {
+    const doc = this.state().documents.find(d => d.id === documentId);
+    
+    // Revoke Blob URL if exists
+    if (doc?.cachedBlobUrl) {
+      URL.revokeObjectURL(doc.cachedBlobUrl);
+    }
+    
+    // Clean up cache for URL-based documents
+    if (doc?.sourceType === 'url' && doc.url) {
+      this.pdfCache.revoke(doc.url);
+    }
+    
     this.viewerState.closeDocument(documentId);
     this.syncQueryParams();
   }
 
-  protected onPdfLoaded(docId: string, event: PdfLoadedEvent): void {
+  protected async onPdfLoaded(docId: string, event: PdfLoadedEvent): Promise<void> {
     const doc = this.state().documents.find(d => d.id === docId);
     console.log('[PDF-LOADED]', {
       docId,
       docName: doc?.name,
       pagesCount: event.pagesCount,
       isActive: docId === this.state().activeId,
-      allDocs: this.state().documents.map(d => ({ name: d.name, id: d.id, status: d.status }))
+      currentPage: this.currentPage,
+      lastViewedPage: doc?.lastViewedPage,
+      lastZoomLevel: doc?.lastZoomLevel,
+      allDocs: this.state().documents.map(d => ({ 
+        name: d.name, 
+        id: d.id, 
+        status: d.status,
+        lastViewedPage: d.lastViewedPage,
+        lastZoomLevel: d.lastZoomLevel
+      }))
     });
     
     this.viewerState.markDocumentReady(docId, { pageCount: event.pagesCount });
+    
+    // Process any pending state updates now that document is ready
+    this.processPendingStateUpdates(docId);
     
     const totalPages = event.pagesCount;
     
     this.totalPages = totalPages;
     
-    // Usar initialPage do documento
-    if (doc?.initialPage && doc.initialPage <= totalPages) {
-      this.currentPage = doc.initialPage;
+    // Priority: initialPage (from URL fragment) > lastViewedPage > 1
+    // Only set page if currentPage is invalid or not set
+    if (this.currentPage > totalPages || this.currentPage < 1) {
+      if (doc?.initialPage && doc.initialPage <= totalPages) {
+        // URL fragment has priority - this is the first load with #page=N
+        this.currentPage = doc.initialPage;
+        console.log('[PDF-LOADED] Using initialPage from URL fragment:', doc.initialPage);
+        // Save initialPage as lastViewedPage for next time
+        this.viewerState.updateDocumentState(docId, { page: doc.initialPage });
+      } else if (doc?.lastViewedPage && doc.lastViewedPage <= totalPages) {
+        // Use saved page if no URL fragment
+        this.currentPage = doc.lastViewedPage;
+        console.log('[PDF-LOADED] Using saved lastViewedPage:', doc.lastViewedPage);
+      } else {
+        // Default to page 1
+        this.currentPage = 1;
+        console.log('[PDF-LOADED] Using default page 1');
+        // Save page 1 if no saved page
+        if (!doc?.lastViewedPage) {
+          this.viewerState.updateDocumentState(docId, { page: 1 });
+        }
+      }
     } else {
-      this.currentPage = 1;
+      // currentPage is valid, but check if we should prioritize initialPage
+      // Only override if this is the first load (no lastViewedPage saved yet)
+      if (doc?.initialPage && doc.initialPage <= totalPages && doc.initialPage !== this.currentPage && !doc.lastViewedPage) {
+        console.log('[PDF-LOADED] First load - overriding currentPage with initialPage from URL fragment:', doc.initialPage);
+        this.currentPage = doc.initialPage;
+        // Save initialPage as lastViewedPage for next time
+        this.viewerState.updateDocumentState(docId, { page: doc.initialPage });
+      } else if (doc?.initialPage && doc.initialPage === this.currentPage) {
+        console.log('[PDF-LOADED] Already on initialPage, ensuring proper rendering');
+        // Force a small delay to ensure proper rendering
+        setTimeout(() => {
+          if (this.currentPage === doc.initialPage) {
+            console.log('[PDF-LOADED] Forcing canvas refresh for initialPage');
+            this.forceCanvasRefresh();
+          }
+        }, 50);
+      }
+    }
+
+    // Restore saved zoom if available and no current zoom is set
+    if (doc?.lastZoomLevel && this.currentZoom === 'auto') {
+      this.currentZoom = doc.lastZoomLevel;
+      console.log('[PDF-LOADED] Restored zoom:', doc.lastZoomLevel);
+    }
+
+    // Cache URL-based documents
+    if (doc?.sourceType === 'url' && doc.url && !doc.cachedBlobUrl) {
+      try {
+        const blobUrl = await this.pdfCache.cacheUrl(doc.url);
+        this.viewerState.updateDocumentState(docId, { 
+          cachedBlobUrl: blobUrl 
+        });
+        console.log('[PDF-CACHE] Cached:', doc.name);
+      } catch (error) {
+        console.warn('[PDF-CACHE] Failed to cache:', error);
+      }
     }
 
     if (this.activeDocument()?.id === docId) {
@@ -181,11 +371,29 @@ export class ViewerPageComponent implements OnDestroy {
 
   protected onPageChange(page: number): void {
     console.debug('[viewer] pageChange emitted', { page });
-    this.currentPage = page;
+    
+    // Save page state to document
+    const doc = this.activeDocument();
+    if (doc) {
+      this.viewerState.updateDocumentState(doc.id, { page });
+    }
+    
+    this.currentPage = page; // Keep for backward compat
     this.updatePageTapZones();
   }
 
   protected onZoomChange(zoom: string | number | undefined): void {
+    // Update local zoom state
+    if (zoom) {
+      this.currentZoom = zoom;
+    }
+    
+    // Save zoom state to document
+    const doc = this.activeDocument();
+    if (doc && zoom) {
+      this.applyStateUpdate(doc.id, { zoom });
+    }
+    
     const settings = this.viewerSettingsSnapshot();
     
     // Only auto-disable if feature is enabled in settings
@@ -217,12 +425,19 @@ export class ViewerPageComponent implements OnDestroy {
 
   protected getDocumentSource(doc: ViewerDocument): string | File {
     if (doc.sourceType === 'file') {
-      return doc.file!;
+      // Convert File to Blob URL if needed
+      if (!doc.cachedBlobUrl && doc.file) {
+        const blobUrl = URL.createObjectURL(doc.file);
+        this.viewerState.updateDocumentState(doc.id, { 
+          cachedBlobUrl: blobUrl 
+        });
+        return blobUrl;
+      }
+      return doc.cachedBlobUrl ?? doc.file!;
     }
-
-    // Retornar URL diretamente sem timestamp para evitar re-renderização infinita
-    // O timestamp será adicionado apenas quando necessário
-    return doc.url ?? '';
+    
+    // Return cached Blob URL if available
+    return doc.cachedBlobUrl ?? doc.url ?? '';
   }
 
   private syncQueryParams(): void {
@@ -230,9 +445,14 @@ export class ViewerPageComponent implements OnDestroy {
       .filter((doc) => doc.sourceType === 'url' && doc.url)
       .map((doc) => doc.url!);
 
+    const customTitles = this.documents()
+      .filter((doc) => doc.sourceType === 'url' && doc.customTitle)
+      .map((doc) => doc.name);
+
     const activeDoc = this.activeDocument();
-    const activeId =
-      activeDoc && activeDoc.sourceType === 'url' && activeDoc.url ? activeDoc.id : null;
+    const activeIndex = activeDoc && activeDoc.sourceType === 'url' && activeDoc.url 
+      ? remoteUrls.findIndex(url => url === activeDoc.url)
+      : null;
 
     // Usar Base64 para ambos os parâmetros para consistência
     const urlsString = remoteUrls.length ? remoteUrls.join('|') : null;
@@ -242,10 +462,15 @@ export class ViewerPageComponent implements OnDestroy {
     const singleUrl = remoteUrls.length === 1 ? remoteUrls[0] : null;
     const encodedSingleUrl = singleUrl ? btoa(singleUrl) : null;
 
+    // Encode custom titles only if there are any
+    const titlesString = customTitles.length ? customTitles.join('|') : null;
+    const encodedTitles = titlesString ? btoa(encodeURIComponent(titlesString)) : null;
+
     const queryParams: Record<string, string | null> = {
       url: encodedSingleUrl,
       urls: encodedUrls,
-      active: activeId,
+      titles: encodedTitles,
+      active: activeIndex !== null ? activeIndex.toString() : null,
     };
 
     this.paramSyncSuppressed.set(true);
@@ -260,14 +485,35 @@ export class ViewerPageComponent implements OnDestroy {
 
   private watchInputChanges(): void {
     effect(() => {
-      // Observar mudanças nos inputs (urls e activeDocumentId)
+      // Observar mudanças nos inputs (urls, titles, activeDocumentId e isGitSubmodule)
       const inputUrls = this.urls;
+      const inputTitles = this.titles;
       const inputActiveId = this.activeDocumentId;
+      const inputIsGitSubmodule = this.isGitSubmodule;
+      
+      // Update git submodule mode
+      if (inputIsGitSubmodule !== undefined) {
+        this.gitSubmodule.setGitSubmoduleMode(inputIsGitSubmodule);
+      }
       
       // Inputs têm prioridade sobre query params para melhor suporte offline
       if (inputUrls && inputUrls.length > 0) {
         console.log('[INPUT-URLS] Applying from inputs:', inputUrls);
-        this.viewerState.applyExternalSources(inputUrls, inputActiveId ?? null);
+        console.log('[INPUT-TITLES] Applying from inputs:', inputTitles);
+        
+        // Convert activeDocumentId to index if it's a string (legacy) or use as-is if number
+        let activeParam: string | number | null = inputActiveId ?? null;
+        if (typeof inputActiveId === 'string' && inputActiveId) {
+          // Legacy: find index of document with this ID
+          const docIndex = inputUrls.findIndex(url => {
+            const { baseUrl } = parseUrlWithFragment(url);
+            return createDocumentIdFromUrl(baseUrl) === inputActiveId;
+          });
+          activeParam = docIndex >= 0 ? docIndex : null;
+          console.log('[INPUT-ACTIVE] Converted ID to index:', inputActiveId, '->', activeParam);
+        }
+        
+        this.viewerState.applyExternalSources(inputUrls, activeParam ?? null, inputTitles);
         // Suprimir sync de query params quando usando inputs
         this.paramSyncSuppressed.set(true);
       }
@@ -278,7 +524,17 @@ export class ViewerPageComponent implements OnDestroy {
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       console.log('[WATCH-PARAMS] All params:', params.keys);
       console.log('[WATCH-PARAMS] urls param:', params.get('urls'));
+      console.log('[WATCH-PARAMS] titles param:', params.get('titles'));
+      console.log('[WATCH-PARAMS] isGitSubmodule param:', params.get('isGitSubmodule'));
       console.log('[WATCH-PARAMS] url param:', params.get('url'));
+      
+      // Process isGitSubmodule parameter
+      const isGitSubmoduleParam = params.get('isGitSubmodule');
+      if (isGitSubmoduleParam !== null) {
+        const isGitSubmodule = this.gitSubmodule.parseGitSubmoduleParam(isGitSubmoduleParam);
+        this.gitSubmodule.setGitSubmoduleMode(isGitSubmodule);
+        console.log('[WATCH-PARAMS] Git submodule mode:', isGitSubmodule);
+      }
       
       if (this.paramSyncSuppressed()) {
         return;
@@ -292,17 +548,20 @@ export class ViewerPageComponent implements OnDestroy {
       }
 
       const urlsParam = params.get('urls');
+      const titlesParam = params.get('titles');
       const fallbackUrl = params.get('url');
-      const activeId = params.get('active');
+      const activeParam = params.get('active');
 
       const urls = parseUrlsParam(urlsParam, fallbackUrl);
+      const titles = parseTitlesParam(titlesParam);
+      const activeIndex = parseActiveParam(activeParam, urls.length);
 
       if (!urls.length) {
         this.viewerState.applyExternalSources([], null);
         return;
       }
 
-      this.viewerState.applyExternalSources(urls, activeId);
+      this.viewerState.applyExternalSources(urls, activeIndex, titles);
     });
   }
 
@@ -359,17 +618,30 @@ export class ViewerPageComponent implements OnDestroy {
       
       if (!doc) {
         this.currentPage = 1;
+        this.currentZoom = 'auto';
         this.totalPages = 0;
         return;
       }
 
-      // Usar initialPage se disponível e documento ainda não carregado
-      if (doc.initialPage && doc.status !== 'ready') {
-        this.currentPage = doc.initialPage;
-      } else if (doc.status === 'ready') {
-        // Manter página atual se já carregado
-      } else {
-        this.currentPage = 1;
+      // Only reset page if it's not already set or if it's out of bounds
+      const maxPages = doc.pageCount ?? 1;
+      if (this.currentPage > maxPages || this.currentPage < 1) {
+        // Priority: initialPage (from URL fragment) > lastViewedPage > 1
+        if (doc.initialPage && doc.initialPage <= maxPages) {
+          this.currentPage = doc.initialPage;
+          console.log('[RESET-PAGINATION] Using initialPage from URL fragment:', doc.initialPage);
+        } else if (doc.lastViewedPage && doc.lastViewedPage <= maxPages) {
+          this.currentPage = doc.lastViewedPage;
+          console.log('[RESET-PAGINATION] Using saved lastViewedPage:', doc.lastViewedPage);
+        } else {
+          this.currentPage = 1;
+          console.log('[RESET-PAGINATION] Using default page 1');
+        }
+      }
+      
+      // Sync zoom with document state only if not already set
+      if (this.currentZoom === 'auto' && doc.lastZoomLevel) {
+        this.currentZoom = doc.lastZoomLevel;
       }
       
       this.totalPages = doc.pageCount ?? 0;
@@ -382,6 +654,18 @@ export class ViewerPageComponent implements OnDestroy {
       // React to viewer settings changes
       this.viewerSettingsSnapshot();
       this.updatePageTapZones();
+    });
+  }
+
+  private initializeGitSubmoduleMode(): void {
+    // Initialize git submodule mode from query params if available
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const isGitSubmoduleParam = params.get('isGitSubmodule');
+      if (isGitSubmoduleParam !== null) {
+        const isGitSubmodule = this.gitSubmodule.parseGitSubmoduleParam(isGitSubmoduleParam);
+        this.gitSubmodule.setGitSubmoduleMode(isGitSubmodule);
+        console.log('[INIT] Git submodule mode initialized:', isGitSubmodule);
+      }
     });
   }
 
@@ -538,8 +822,24 @@ export class ViewerPageComponent implements OnDestroy {
       return;
     }
 
+    const previousPage = this.currentPage;
     this.currentPage += 1;
-    console.debug('[viewer] next page', { page: this.currentPage });
+    console.debug('[viewer] next page', { 
+      previousPage, 
+      newPage: this.currentPage,
+      totalPages: this.totalPages
+    });
+    
+    // Force canvas refresh for any page to ensure proper rendering
+    console.log('[CANVAS-FIX] Forcing canvas refresh for page', this.currentPage);
+    this.forceCanvasRefresh();
+    
+    // Save page state to document
+    const doc = this.activeDocument();
+    if (doc) {
+      console.log('[SAVE-STATE] Saving page state:', { docId: doc.id, page: this.currentPage });
+      this.applyStateUpdate(doc.id, { page: this.currentPage });
+    }
   }
 
   private goToPreviousPage(): void {
@@ -550,8 +850,24 @@ export class ViewerPageComponent implements OnDestroy {
       return;
     }
 
+    const previousPage = this.currentPage;
     this.currentPage -= 1;
-    console.debug('[viewer] previous page', { page: this.currentPage });
+    console.debug('[viewer] previous page', { 
+      previousPage, 
+      newPage: this.currentPage,
+      totalPages: this.totalPages
+    });
+    
+    // Force canvas refresh for any page to ensure proper rendering
+    console.log('[CANVAS-FIX] Forcing canvas refresh for page', this.currentPage);
+    this.forceCanvasRefresh();
+    
+    // Save page state to document
+    const doc = this.activeDocument();
+    if (doc) {
+      console.log('[SAVE-STATE] Saving page state:', { docId: doc.id, page: this.currentPage });
+      this.applyStateUpdate(doc.id, { page: this.currentPage });
+    }
   }
 
   private addCustomOptionsToNativeMenu(): void {
@@ -993,6 +1309,75 @@ export class ViewerPageComponent implements OnDestroy {
     this.tapZoneObserver?.disconnect();
     this.tapZoneObserver = undefined;
   }
+}
+
+function parseTitlesParam(titlesParam: string | null): string[] {
+  console.log('[PARSE-TITLES] Raw titlesParam:', titlesParam);
+  
+  if (!titlesParam) {
+    return [];
+  }
+
+  let decoded = titlesParam;
+  
+  // Verificar se está em Base64
+  const looksLikeBase64 = !titlesParam.includes('://') && 
+                         /^[A-Za-z0-9+/=-]+$/.test(titlesParam) &&
+                         titlesParam.length > 10;
+  
+  if (looksLikeBase64) {
+    try {
+      // Decodificar Base64 e depois URI component para preservar acentos
+      const base64Decoded = atob(titlesParam);
+      decoded = decodeURIComponent(base64Decoded);
+      console.log('[PARSE-TITLES] Decoded from Base64 + URI:', decoded);
+    } catch (e) {
+      console.error('[PARSE-TITLES] Base64 decode failed:', e);
+      decoded = titlesParam;
+    }
+  } else {
+    // Não é Base64, pode ser encoded
+    try {
+      decoded = decodeURIComponent(titlesParam);
+      console.log('[PARSE-TITLES] Decoded from URI component');
+    } catch (e) {
+      decoded = titlesParam;
+    }
+  }
+  
+  // Split APENAS por pipe (|) - vírgulas são parte do título
+  const split = decoded.split('|');
+  console.log('[PARSE-TITLES] Split into', split.length, 'titles');
+  
+  const result = split.map((value) => value.trim()).filter(Boolean);
+  console.log('[PARSE-TITLES] Final:', result.length, 'valid titles');
+  
+  return result;
+}
+
+function parseActiveParam(activeParam: string | null, urlsCount: number): number | null {
+  console.log('[PARSE-ACTIVE] Raw activeParam:', activeParam);
+  console.log('[PARSE-ACTIVE] URLs count:', urlsCount);
+  
+  if (!activeParam) {
+    console.log('[PARSE-ACTIVE] No active param, default to 0');
+    return null; // Will default to first document (index 0)
+  }
+
+  const index = parseInt(activeParam, 10);
+  
+  if (isNaN(index)) {
+    console.log('[PARSE-ACTIVE] Invalid index, default to 0');
+    return null;
+  }
+  
+  if (index < 0 || index >= urlsCount) {
+    console.log(`[PARSE-ACTIVE] Index ${index} out of range (0-${urlsCount-1}), default to 0`);
+    return null;
+  }
+  
+  console.log(`[PARSE-ACTIVE] Valid index: ${index}`);
+  return index;
 }
 
 function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): string[] {

@@ -5,7 +5,11 @@
   [style.--toolbar-height-mobile.px]="layout.toolbar.height.mobile"
   [style.--content-max-width.px]="layout.contentMaxWidth"
 >
-  <header class="app-toolbar" [style.boxShadow]="layout.toolbar.elevation" role="banner">
+  <header 
+    class="app-toolbar" 
+    [style.boxShadow]="layout.toolbar.elevation" 
+    [style.display]="isGitSubmodule() ? 'none' : 'block'"
+    role="banner">
     <div class="app-toolbar__brand">
       <span class="app-toolbar__badge" aria-hidden="true">Coletânea Digital</span>
       <div class="app-toolbar__titles">

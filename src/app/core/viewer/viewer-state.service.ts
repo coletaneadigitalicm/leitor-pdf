@@ -30,7 +30,7 @@ export class ViewerStateService {
     return this.stateSubject.value;
   }
 
-  applyExternalSources(urls: string[], activeId?: string | null): void {
+  applyExternalSources(urls: string[], activeIdOrIndex?: string | number | null, titles?: string[]): void {
     console.log('[APPLY-SOURCES] Input URLs:', urls);
     
     const normalized = this.normalizeUrls(urls);
@@ -45,8 +45,22 @@ export class ViewerStateService {
     }
 
     if (this.lastExternalCombinationKey === combinationKey) {
-      if (activeId && this.snapshot.activeId !== activeId && this.hasDocument(activeId)) {
-        this.setActiveDocument(activeId);
+      // Handle active change for existing documents
+      if (activeIdOrIndex !== null && activeIdOrIndex !== undefined) {
+        if (typeof activeIdOrIndex === 'number') {
+          // Index-based activation
+          const targetDoc = normalized[activeIdOrIndex];
+          if (targetDoc) {
+            const { baseUrl } = parseUrlWithFragment(targetDoc);
+            const docId = createDocumentIdFromUrl(baseUrl);
+            if (this.hasDocument(docId)) {
+              this.setActiveDocument(docId);
+            }
+          }
+        } else if (typeof activeIdOrIndex === 'string' && this.hasDocument(activeIdOrIndex)) {
+          // ID-based activation (legacy)
+          this.setActiveDocument(activeIdOrIndex);
+        }
       }
       return;
     }
@@ -68,21 +82,32 @@ export class ViewerStateService {
           } satisfies ViewerDocument;
         }
         
-        const newDoc = buildDocumentFromUrl(url);
+        const customTitle = titles?.[index];
+        const newDoc = buildDocumentFromUrl(url, customTitle);
         console.log(`[APPLY-SOURCES] Doc ${index}: Created new`, {
           name: newDoc.name,
           id: newDoc.id,
           url: newDoc.url,
-          initialPage: newDoc.initialPage
+          initialPage: newDoc.initialPage,
+          customTitle: newDoc.customTitle
         });
         return newDoc;
       });
 
       let nextActiveId: string | null = null;
-      if (activeId && documents.some((doc) => doc.id === activeId)) {
-        nextActiveId = activeId;
+      
+      if (typeof activeIdOrIndex === 'number' && activeIdOrIndex >= 0 && activeIdOrIndex < documents.length) {
+        // Index-based selection
+        nextActiveId = documents[activeIdOrIndex].id;
+        console.log(`[APPLY-SOURCES] Active by index ${activeIdOrIndex}:`, documents[activeIdOrIndex].name);
+      } else if (typeof activeIdOrIndex === 'string' && documents.some((doc) => doc.id === activeIdOrIndex)) {
+        // ID-based selection (legacy)
+        nextActiveId = activeIdOrIndex;
+        console.log('[APPLY-SOURCES] Active by ID:', activeIdOrIndex);
       } else {
+        // Default to first document
         nextActiveId = documents[0]?.id ?? null;
+        console.log('[APPLY-SOURCES] Active by default (first):', documents[0]?.name);
       }
       
       console.log('[APPLY-SOURCES] Active ID will be:', nextActiveId);
@@ -347,6 +372,31 @@ export class ViewerStateService {
     }
 
     return normalized;
+  }
+
+  updateDocumentState(docId: string, state: {
+    page?: number;
+    zoom?: string | number;
+    scrollY?: number;
+    cachedBlobUrl?: string;
+  }): void {
+    console.log('[UPDATE-DOC-STATE] Called with:', { docId, state });
+    this.updateDocument(docId, (doc) => {
+      const updated = {
+        ...doc,
+        lastViewedPage: state.page ?? doc.lastViewedPage,
+        lastZoomLevel: state.zoom ?? doc.lastZoomLevel,
+        lastScrollY: state.scrollY ?? doc.lastScrollY,
+        cachedBlobUrl: state.cachedBlobUrl ?? doc.cachedBlobUrl,
+      };
+      console.log('[UPDATE-DOC-STATE] Updated doc:', { 
+        id: doc.id, 
+        name: doc.name,
+        lastViewedPage: updated.lastViewedPage,
+        lastZoomLevel: updated.lastZoomLevel 
+      });
+      return updated;
+    });
   }
 
   private buildCombinationKey(urls: string[]): string {

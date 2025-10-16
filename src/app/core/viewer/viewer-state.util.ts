@@ -27,18 +27,21 @@ export function createInitialViewerState(): ViewerState {
   };
 }
 
-export function buildDocumentFromUrl(url: string): ViewerDocument {
+export function buildDocumentFromUrl(url: string, customTitle?: string): ViewerDocument {
   const { baseUrl, pageNumber } = parseUrlWithFragment(url);
+  const title = customTitle?.trim();
+  const isCustomTitle = Boolean(title);
   
   return {
     id: createDocumentIdFromUrl(url), // ID baseado na URL base
-    name: decodeURIComponent(deriveDocumentName(baseUrl)),
+    name: title || decodeURIComponent(deriveDocumentName(baseUrl)),
     sourceType: 'url',
     url: baseUrl, // Armazenar URL base
     initialPage: pageNumber ?? undefined,
     lastUpdatedAt: Date.now(),
     status: 'idle',
     error: null,
+    customTitle: isCustomTitle,
   };
 }
 
