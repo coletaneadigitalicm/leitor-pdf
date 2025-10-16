@@ -1,5 +1,4 @@
-import { Component, inject } from '@angular/core';
-import { AsyncPipe } from '@angular/common';
+import { Component, inject, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 
 import { AppConfigService } from '../config/app-config.service';
@@ -8,7 +7,7 @@ import { GitSubmoduleService } from '../config/git-submodule.service';
 @Component({
   selector: 'app-shell',
   standalone: true,
-  imports: [RouterOutlet, AsyncPipe],
+  imports: [RouterOutlet],
   templateUrl: './shell.component.html',
   styleUrl: './shell.component.scss',
 })
@@ -20,8 +19,18 @@ export class ShellComponent {
   protected readonly theme = this.appConfigService.getTheme();
   protected readonly appTitle = this.appConfigService.getAppTitle();
   protected readonly typography = this.appConfigService.getTypography();
-  protected readonly isGitSubmodule = this.gitSubmoduleService.isGitSubmodule$;
+  
+  // Use signal to avoid ExpressionChangedAfterItHasBeenCheckedError
+  protected readonly isGitSubmodule = signal(false);
+  
   protected readonly backgroundStyle = {
     background: `linear-gradient(135deg, ${this.theme.background} 0%, #3a201f 100%)`,
   };
+
+  constructor() {
+    // Subscribe to git submodule changes and update signal
+    this.gitSubmoduleService.isGitSubmodule$.subscribe(value => {
+      this.isGitSubmodule.set(value);
+    });
+  }
 }

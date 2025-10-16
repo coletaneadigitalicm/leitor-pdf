@@ -23,7 +23,7 @@ import {
 
 import { ViewerStateService } from '../../core/viewer/viewer-state.service';
 import { ViewerDocument } from '../../core/viewer/viewer-state.model';
-import { createInitialViewerState } from '../../core/viewer/viewer-state.util';
+import { createInitialViewerState, createDocumentIdFromUrl, parseUrlWithFragment } from '../../core/viewer/viewer-state.util';
 import { ViewerSettingsService } from '../../core/viewer/viewer-settings.service';
 import { PdfCacheService } from '../../core/viewer/pdf-cache.service';
 import { GitSubmoduleService } from '../../core/config/git-submodule.service';
@@ -98,10 +98,7 @@ export class ViewerPageComponent implements OnDestroy {
   // Computed signals for current document state
   protected readonly currentDocPage = computed(() => {
     const doc = this.activeDocument();
-    // Only use saved page if document is ready, otherwise use currentPage
-    if (doc?.status === 'ready' && doc.lastViewedPage) {
-      return doc.lastViewedPage;
-    }
+    // Use currentPage for consistency - it's already managed properly
     return this.currentPage;
   });
 
@@ -191,15 +188,20 @@ export class ViewerPageComponent implements OnDestroy {
     
     this.totalPages = totalPages;
     
-    // Usar initialPage do documento se disponível e válido
-    if (doc?.initialPage && doc.initialPage <= totalPages) {
+    // Restore saved page if available, otherwise use initialPage or 1
+    if (doc?.lastViewedPage && doc.lastViewedPage <= totalPages) {
+      this.currentPage = doc.lastViewedPage;
+    } else if (doc?.initialPage && doc.initialPage <= totalPages) {
       this.currentPage = doc.initialPage;
+      // Save initialPage as lastViewedPage for next time
+      this.viewerState.updateDocumentState(docId, { page: doc.initialPage });
     } else {
       this.currentPage = 1;
+      // Save page 1 if no saved page
+      if (!doc?.lastViewedPage) {
+        this.viewerState.updateDocumentState(docId, { page: 1 });
+      }
     }
-    
-    // Save current page as lastViewedPage
-    this.viewerState.updateDocumentState(docId, { page: this.currentPage });
 
     // Cache URL-based documents
     if (doc?.sourceType === 'url' && doc.url && !doc.cachedBlobUrl) {
@@ -305,8 +307,9 @@ export class ViewerPageComponent implements OnDestroy {
       .map((doc) => doc.name);
 
     const activeDoc = this.activeDocument();
-    const activeId =
-      activeDoc && activeDoc.sourceType === 'url' && activeDoc.url ? activeDoc.id : null;
+    const activeIndex = activeDoc && activeDoc.sourceType === 'url' && activeDoc.url 
+      ? remoteUrls.findIndex(url => url === activeDoc.url)
+      : null;
 
     // Usar Base64 para ambos os parâmetros para consistência
     const urlsString = remoteUrls.length ? remoteUrls.join('|') : null;
@@ -324,7 +327,7 @@ export class ViewerPageComponent implements OnDestroy {
       url: encodedSingleUrl,
       urls: encodedUrls,
       titles: encodedTitles,
-      active: activeId,
+      active: activeIndex !== null ? activeIndex.toString() : null,
     };
 
     this.paramSyncSuppressed.set(true);
@@ -354,7 +357,20 @@ export class ViewerPageComponent implements OnDestroy {
       if (inputUrls && inputUrls.length > 0) {
         console.log('[INPUT-URLS] Applying from inputs:', inputUrls);
         console.log('[INPUT-TITLES] Applying from inputs:', inputTitles);
-        this.viewerState.applyExternalSources(inputUrls, inputActiveId ?? null, inputTitles);
+        
+        // Convert activeDocumentId to index if it's a string (legacy) or use as-is if number
+        let activeParam: string | number | null = inputActiveId ?? null;
+        if (typeof inputActiveId === 'string' && inputActiveId) {
+          // Legacy: find index of document with this ID
+          const docIndex = inputUrls.findIndex(url => {
+            const { baseUrl } = parseUrlWithFragment(url);
+            return createDocumentIdFromUrl(baseUrl) === inputActiveId;
+          });
+          activeParam = docIndex >= 0 ? docIndex : null;
+          console.log('[INPUT-ACTIVE] Converted ID to index:', inputActiveId, '->', activeParam);
+        }
+        
+        this.viewerState.applyExternalSources(inputUrls, activeParam ?? null, inputTitles);
         // Suprimir sync de query params quando usando inputs
         this.paramSyncSuppressed.set(true);
       }
@@ -391,17 +407,18 @@ export class ViewerPageComponent implements OnDestroy {
       const urlsParam = params.get('urls');
       const titlesParam = params.get('titles');
       const fallbackUrl = params.get('url');
-      const activeId = params.get('active');
+      const activeParam = params.get('active');
 
       const urls = parseUrlsParam(urlsParam, fallbackUrl);
       const titles = parseTitlesParam(titlesParam);
+      const activeIndex = parseActiveParam(activeParam, urls.length);
 
       if (!urls.length) {
         this.viewerState.applyExternalSources([], null);
         return;
       }
 
-      this.viewerState.applyExternalSources(urls, activeId, titles);
+      this.viewerState.applyExternalSources(urls, activeIndex, titles);
     });
   }
 
@@ -462,10 +479,9 @@ export class ViewerPageComponent implements OnDestroy {
         return;
       }
 
-      // Use lastViewedPage if document is ready, otherwise use initialPage or 1
-      if (doc.status === 'ready' && doc.lastViewedPage) {
-        this.currentPage = doc.lastViewedPage;
-      } else if (doc.initialPage) {
+      // Use initialPage if available, otherwise start with page 1
+      // lastViewedPage will be restored when PDF loads via onPdfLoaded
+      if (doc.initialPage) {
         this.currentPage = doc.initialPage;
       } else {
         this.currentPage = 1;
@@ -1148,6 +1164,31 @@ function parseTitlesParam(titlesParam: string | null): string[] {
   console.log('[PARSE-TITLES] Final:', result.length, 'valid titles');
   
   return result;
+}
+
+function parseActiveParam(activeParam: string | null, urlsCount: number): number | null {
+  console.log('[PARSE-ACTIVE] Raw activeParam:', activeParam);
+  console.log('[PARSE-ACTIVE] URLs count:', urlsCount);
+  
+  if (!activeParam) {
+    console.log('[PARSE-ACTIVE] No active param, default to 0');
+    return null; // Will default to first document (index 0)
+  }
+
+  const index = parseInt(activeParam, 10);
+  
+  if (isNaN(index)) {
+    console.log('[PARSE-ACTIVE] Invalid index, default to 0');
+    return null;
+  }
+  
+  if (index < 0 || index >= urlsCount) {
+    console.log(`[PARSE-ACTIVE] Index ${index} out of range (0-${urlsCount-1}), default to 0`);
+    return null;
+  }
+  
+  console.log(`[PARSE-ACTIVE] Valid index: ${index}`);
+  return index;
 }
 
 function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): string[] {

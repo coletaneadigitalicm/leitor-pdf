@@ -8,7 +8,7 @@
   <header 
     class="app-toolbar" 
     [style.boxShadow]="layout.toolbar.elevation" 
-    [style.display]="(isGitSubmodule | async) ? 'none' : 'block'"
+    [style.display]="isGitSubmodule() ? 'none' : 'block'"
     role="banner">
     <div class="app-toolbar__brand">
       <span class="app-toolbar__badge" aria-hidden="true">Coletânea Digital</span>
