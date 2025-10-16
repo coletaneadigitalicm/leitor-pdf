@@ -58,6 +58,7 @@ export class ViewerPageComponent implements OnDestroy {
   private readonly paramSyncSuppressed = signal(false);
 
   protected currentPage = 1;
+  protected currentZoom: string | number = 'auto';
   protected totalPages = 0;
   protected readonly pageScrollMode = ScrollModeType.page;
 
@@ -98,17 +99,109 @@ export class ViewerPageComponent implements OnDestroy {
   // Computed signals for current document state
   protected readonly currentDocPage = computed(() => {
     const doc = this.activeDocument();
-    // Use currentPage for consistency - it's already managed properly
+    // Always use currentPage for immediate responsiveness
+    // The saved page will be applied when document loads via onPdfLoaded
     return this.currentPage;
   });
 
   protected readonly currentDocZoom = computed(() => {
     const doc = this.activeDocument();
-    return doc?.lastZoomLevel ?? 'auto';
+    // Always use currentZoom for immediate responsiveness
+    // The saved zoom will be applied when document loads via onPdfLoaded
+    return this.currentZoom;
   });
 
   private tapZoneObserver?: MutationObserver;
   private autoDisabledNavigation = false; // Track if navigation was auto-disabled on zoom
+  private pendingStateUpdates = new Map<string, { page?: number; zoom?: string | number; scrollY?: number }>();
+
+  private applyStateUpdate(docId: string, state: { page?: number; zoom?: string | number; scrollY?: number }): void {
+    const doc = this.state().documents.find(d => d.id === docId);
+    
+    if (!doc) {
+      console.log('[STATE-UPDATE] Document not found, queuing update:', { docId, state });
+      this.pendingStateUpdates.set(docId, state);
+      return;
+    }
+    
+    if (doc.status !== 'ready') {
+      console.log('[STATE-UPDATE] Document not ready, queuing update:', { docId, docStatus: doc.status, state });
+      this.pendingStateUpdates.set(docId, state);
+      return;
+    }
+    
+    // Allow all state updates - the protection was causing rendering issues
+    // when navigating back to the initial page
+    
+    console.log('[STATE-UPDATE] Applying state update:', { docId, state });
+    this.viewerState.updateDocumentState(docId, state);
+  }
+
+  private processPendingStateUpdates(docId: string): void {
+    const pendingUpdate = this.pendingStateUpdates.get(docId);
+    if (pendingUpdate) {
+      console.log('[STATE-UPDATE] Processing pending update:', { docId, pendingUpdate });
+      this.viewerState.updateDocumentState(docId, pendingUpdate);
+      this.pendingStateUpdates.delete(docId);
+    }
+  }
+
+  private forceCanvasRefresh(): void {
+    const host = this.pdfViewerRef?.nativeElement;
+    if (!host) {
+      console.log('[CANVAS-FIX] No PDF viewer element found');
+      return;
+    }
+
+    // Find all canvas elements and force re-render
+    const canvases = host.querySelectorAll('canvas');
+    console.log('[CANVAS-FIX] Found', canvases.length, 'canvas elements');
+    
+    canvases.forEach((canvas, index) => {
+      console.log('[CANVAS-FIX] Refreshing canvas', index);
+      
+      // Force canvas to re-render by triggering a resize event
+      const event = new Event('resize', { bubbles: true });
+      canvas.dispatchEvent(event);
+      
+      // Alternative: Force redraw by accessing the canvas context
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // Trigger a minimal redraw to force refresh
+        ctx.save();
+        ctx.restore();
+      }
+    });
+
+    // Also try to trigger PDF.js internal refresh
+    setTimeout(() => {
+      const pdfViewer = (host as any).pdfViewer;
+      if (pdfViewer) {
+        console.log('[CANVAS-FIX] Triggering PDF.js refresh for page', this.currentPage);
+        
+        // Method 1: Force page number update
+        if (pdfViewer.currentPageNumber !== this.currentPage) {
+          pdfViewer.currentPageNumber = this.currentPage;
+        }
+        
+        // Method 2: Force re-render of current page
+        if (pdfViewer._pages) {
+          const pageView = pdfViewer._pages[this.currentPage - 1];
+          if (pageView && pageView.canvas) {
+            console.log('[CANVAS-FIX] Found page view, forcing re-render');
+            pageView.update();
+          }
+        }
+        
+        // Method 3: Trigger scroll event to force refresh
+        const scrollContainer = host.querySelector('.scrollMode');
+        if (scrollContainer) {
+          const scrollEvent = new Event('scroll', { bubbles: true });
+          scrollContainer.dispatchEvent(scrollEvent);
+        }
+      }
+    }, 100);
+  }
 
   constructor() {
     this.watchInputChanges();
@@ -179,28 +272,73 @@ export class ViewerPageComponent implements OnDestroy {
       docName: doc?.name,
       pagesCount: event.pagesCount,
       isActive: docId === this.state().activeId,
-      allDocs: this.state().documents.map(d => ({ name: d.name, id: d.id, status: d.status }))
+      currentPage: this.currentPage,
+      lastViewedPage: doc?.lastViewedPage,
+      lastZoomLevel: doc?.lastZoomLevel,
+      allDocs: this.state().documents.map(d => ({ 
+        name: d.name, 
+        id: d.id, 
+        status: d.status,
+        lastViewedPage: d.lastViewedPage,
+        lastZoomLevel: d.lastZoomLevel
+      }))
     });
     
     this.viewerState.markDocumentReady(docId, { pageCount: event.pagesCount });
+    
+    // Process any pending state updates now that document is ready
+    this.processPendingStateUpdates(docId);
     
     const totalPages = event.pagesCount;
     
     this.totalPages = totalPages;
     
-    // Restore saved page if available, otherwise use initialPage or 1
-    if (doc?.lastViewedPage && doc.lastViewedPage <= totalPages) {
-      this.currentPage = doc.lastViewedPage;
-    } else if (doc?.initialPage && doc.initialPage <= totalPages) {
-      this.currentPage = doc.initialPage;
-      // Save initialPage as lastViewedPage for next time
-      this.viewerState.updateDocumentState(docId, { page: doc.initialPage });
-    } else {
-      this.currentPage = 1;
-      // Save page 1 if no saved page
-      if (!doc?.lastViewedPage) {
-        this.viewerState.updateDocumentState(docId, { page: 1 });
+    // Priority: initialPage (from URL fragment) > lastViewedPage > 1
+    // Only set page if currentPage is invalid or not set
+    if (this.currentPage > totalPages || this.currentPage < 1) {
+      if (doc?.initialPage && doc.initialPage <= totalPages) {
+        // URL fragment has priority - this is the first load with #page=N
+        this.currentPage = doc.initialPage;
+        console.log('[PDF-LOADED] Using initialPage from URL fragment:', doc.initialPage);
+        // Save initialPage as lastViewedPage for next time
+        this.viewerState.updateDocumentState(docId, { page: doc.initialPage });
+      } else if (doc?.lastViewedPage && doc.lastViewedPage <= totalPages) {
+        // Use saved page if no URL fragment
+        this.currentPage = doc.lastViewedPage;
+        console.log('[PDF-LOADED] Using saved lastViewedPage:', doc.lastViewedPage);
+      } else {
+        // Default to page 1
+        this.currentPage = 1;
+        console.log('[PDF-LOADED] Using default page 1');
+        // Save page 1 if no saved page
+        if (!doc?.lastViewedPage) {
+          this.viewerState.updateDocumentState(docId, { page: 1 });
+        }
       }
+    } else {
+      // currentPage is valid, but check if we should prioritize initialPage
+      // Only override if this is the first load (no lastViewedPage saved yet)
+      if (doc?.initialPage && doc.initialPage <= totalPages && doc.initialPage !== this.currentPage && !doc.lastViewedPage) {
+        console.log('[PDF-LOADED] First load - overriding currentPage with initialPage from URL fragment:', doc.initialPage);
+        this.currentPage = doc.initialPage;
+        // Save initialPage as lastViewedPage for next time
+        this.viewerState.updateDocumentState(docId, { page: doc.initialPage });
+      } else if (doc?.initialPage && doc.initialPage === this.currentPage) {
+        console.log('[PDF-LOADED] Already on initialPage, ensuring proper rendering');
+        // Force a small delay to ensure proper rendering
+        setTimeout(() => {
+          if (this.currentPage === doc.initialPage) {
+            console.log('[PDF-LOADED] Forcing canvas refresh for initialPage');
+            this.forceCanvasRefresh();
+          }
+        }, 50);
+      }
+    }
+
+    // Restore saved zoom if available and no current zoom is set
+    if (doc?.lastZoomLevel && this.currentZoom === 'auto') {
+      this.currentZoom = doc.lastZoomLevel;
+      console.log('[PDF-LOADED] Restored zoom:', doc.lastZoomLevel);
     }
 
     // Cache URL-based documents
@@ -245,10 +383,15 @@ export class ViewerPageComponent implements OnDestroy {
   }
 
   protected onZoomChange(zoom: string | number | undefined): void {
+    // Update local zoom state
+    if (zoom) {
+      this.currentZoom = zoom;
+    }
+    
     // Save zoom state to document
     const doc = this.activeDocument();
     if (doc && zoom) {
-      this.viewerState.updateDocumentState(doc.id, { zoom });
+      this.applyStateUpdate(doc.id, { zoom });
     }
     
     const settings = this.viewerSettingsSnapshot();
@@ -475,16 +618,30 @@ export class ViewerPageComponent implements OnDestroy {
       
       if (!doc) {
         this.currentPage = 1;
+        this.currentZoom = 'auto';
         this.totalPages = 0;
         return;
       }
 
-      // Use initialPage if available, otherwise start with page 1
-      // lastViewedPage will be restored when PDF loads via onPdfLoaded
-      if (doc.initialPage) {
-        this.currentPage = doc.initialPage;
-      } else {
-        this.currentPage = 1;
+      // Only reset page if it's not already set or if it's out of bounds
+      const maxPages = doc.pageCount ?? 1;
+      if (this.currentPage > maxPages || this.currentPage < 1) {
+        // Priority: initialPage (from URL fragment) > lastViewedPage > 1
+        if (doc.initialPage && doc.initialPage <= maxPages) {
+          this.currentPage = doc.initialPage;
+          console.log('[RESET-PAGINATION] Using initialPage from URL fragment:', doc.initialPage);
+        } else if (doc.lastViewedPage && doc.lastViewedPage <= maxPages) {
+          this.currentPage = doc.lastViewedPage;
+          console.log('[RESET-PAGINATION] Using saved lastViewedPage:', doc.lastViewedPage);
+        } else {
+          this.currentPage = 1;
+          console.log('[RESET-PAGINATION] Using default page 1');
+        }
+      }
+      
+      // Sync zoom with document state only if not already set
+      if (this.currentZoom === 'auto' && doc.lastZoomLevel) {
+        this.currentZoom = doc.lastZoomLevel;
       }
       
       this.totalPages = doc.pageCount ?? 0;
@@ -665,8 +822,24 @@ export class ViewerPageComponent implements OnDestroy {
       return;
     }
 
+    const previousPage = this.currentPage;
     this.currentPage += 1;
-    console.debug('[viewer] next page', { page: this.currentPage });
+    console.debug('[viewer] next page', { 
+      previousPage, 
+      newPage: this.currentPage,
+      totalPages: this.totalPages
+    });
+    
+    // Force canvas refresh for any page to ensure proper rendering
+    console.log('[CANVAS-FIX] Forcing canvas refresh for page', this.currentPage);
+    this.forceCanvasRefresh();
+    
+    // Save page state to document
+    const doc = this.activeDocument();
+    if (doc) {
+      console.log('[SAVE-STATE] Saving page state:', { docId: doc.id, page: this.currentPage });
+      this.applyStateUpdate(doc.id, { page: this.currentPage });
+    }
   }
 
   private goToPreviousPage(): void {
@@ -677,8 +850,24 @@ export class ViewerPageComponent implements OnDestroy {
       return;
     }
 
+    const previousPage = this.currentPage;
     this.currentPage -= 1;
-    console.debug('[viewer] previous page', { page: this.currentPage });
+    console.debug('[viewer] previous page', { 
+      previousPage, 
+      newPage: this.currentPage,
+      totalPages: this.totalPages
+    });
+    
+    // Force canvas refresh for any page to ensure proper rendering
+    console.log('[CANVAS-FIX] Forcing canvas refresh for page', this.currentPage);
+    this.forceCanvasRefresh();
+    
+    // Save page state to document
+    const doc = this.activeDocument();
+    if (doc) {
+      console.log('[SAVE-STATE] Saving page state:', { docId: doc.id, page: this.currentPage });
+      this.applyStateUpdate(doc.id, { page: this.currentPage });
+    }
   }
 
   private addCustomOptionsToNativeMenu(): void {

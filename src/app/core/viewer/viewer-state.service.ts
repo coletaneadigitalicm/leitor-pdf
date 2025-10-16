@@ -380,13 +380,23 @@ export class ViewerStateService {
     scrollY?: number;
     cachedBlobUrl?: string;
   }): void {
-    this.updateDocument(docId, (doc) => ({
-      ...doc,
-      lastViewedPage: state.page ?? doc.lastViewedPage,
-      lastZoomLevel: state.zoom ?? doc.lastZoomLevel,
-      lastScrollY: state.scrollY ?? doc.lastScrollY,
-      cachedBlobUrl: state.cachedBlobUrl ?? doc.cachedBlobUrl,
-    }));
+    console.log('[UPDATE-DOC-STATE] Called with:', { docId, state });
+    this.updateDocument(docId, (doc) => {
+      const updated = {
+        ...doc,
+        lastViewedPage: state.page ?? doc.lastViewedPage,
+        lastZoomLevel: state.zoom ?? doc.lastZoomLevel,
+        lastScrollY: state.scrollY ?? doc.lastScrollY,
+        cachedBlobUrl: state.cachedBlobUrl ?? doc.cachedBlobUrl,
+      };
+      console.log('[UPDATE-DOC-STATE] Updated doc:', { 
+        id: doc.id, 
+        name: doc.name,
+        lastViewedPage: updated.lastViewedPage,
+        lastZoomLevel: updated.lastZoomLevel 
+      });
+      return updated;
+    });
   }
 
   private buildCombinationKey(urls: string[]): string {
