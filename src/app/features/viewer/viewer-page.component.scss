@@ -10,6 +10,12 @@
   gap: var(--spacing-3);
   flex: 1;
   min-height: calc(100vh - var(--toolbar-height-desktop, 80px) - var(--spacing-4) * 2);
+  
+  // When in git submodule mode (iframe), use content-based height
+  :host-context(.git-submodule-mode) & {
+    min-height: auto;
+    height: auto;
+  }
 }
 
 .viewer__carousel {
@@ -138,6 +144,12 @@
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
   isolation: isolate;
   touch-action: manipulation; // Allows pinch-zoom and double-tap zoom
+  
+  // When in git submodule mode (iframe), use content-based height
+  :host-context(.git-submodule-mode) & {
+    height: auto;
+    min-height: 400px; // Minimum height for usability
+  }
 }
 
 /* Estilos para integração com toolbar nativo do PDF viewer */

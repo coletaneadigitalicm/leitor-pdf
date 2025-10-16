@@ -12,6 +12,12 @@
   background-repeat: no-repeat;
   background-size: cover;
   background-attachment: fixed;
+  
+  // When in git submodule mode (iframe), use content-based height
+  &.git-submodule-mode {
+    min-height: auto;
+    height: auto;
+  }
 }
 
 .app-toolbar {
