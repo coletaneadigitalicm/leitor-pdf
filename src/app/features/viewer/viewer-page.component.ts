@@ -37,6 +37,7 @@ import { DocumentCarouselComponent } from './document-carousel.component';
 export class ViewerPageComponent implements OnDestroy {
   // Inputs para uso programático (melhor para offline/service workers)
   @Input() urls?: string[];  // URLs to load
+  @Input() titles?: string[];  // Custom titles for documents
   @Input() activeDocumentId?: string;  // Which document to show initially
   
   private readonly route = inject(ActivatedRoute);
@@ -230,6 +231,10 @@ export class ViewerPageComponent implements OnDestroy {
       .filter((doc) => doc.sourceType === 'url' && doc.url)
       .map((doc) => doc.url!);
 
+    const customTitles = this.documents()
+      .filter((doc) => doc.sourceType === 'url' && doc.customTitle)
+      .map((doc) => doc.name);
+
     const activeDoc = this.activeDocument();
     const activeId =
       activeDoc && activeDoc.sourceType === 'url' && activeDoc.url ? activeDoc.id : null;
@@ -242,9 +247,14 @@ export class ViewerPageComponent implements OnDestroy {
     const singleUrl = remoteUrls.length === 1 ? remoteUrls[0] : null;
     const encodedSingleUrl = singleUrl ? btoa(singleUrl) : null;
 
+    // Encode custom titles only if there are any
+    const titlesString = customTitles.length ? customTitles.join('|') : null;
+    const encodedTitles = titlesString ? btoa(titlesString) : null;
+
     const queryParams: Record<string, string | null> = {
       url: encodedSingleUrl,
       urls: encodedUrls,
+      titles: encodedTitles,
       active: activeId,
     };
 
@@ -260,14 +270,16 @@ export class ViewerPageComponent implements OnDestroy {
 
   private watchInputChanges(): void {
     effect(() => {
-      // Observar mudanças nos inputs (urls e activeDocumentId)
+      // Observar mudanças nos inputs (urls, titles e activeDocumentId)
       const inputUrls = this.urls;
+      const inputTitles = this.titles;
       const inputActiveId = this.activeDocumentId;
       
       // Inputs têm prioridade sobre query params para melhor suporte offline
       if (inputUrls && inputUrls.length > 0) {
         console.log('[INPUT-URLS] Applying from inputs:', inputUrls);
-        this.viewerState.applyExternalSources(inputUrls, inputActiveId ?? null);
+        console.log('[INPUT-TITLES] Applying from inputs:', inputTitles);
+        this.viewerState.applyExternalSources(inputUrls, inputActiveId ?? null, inputTitles);
         // Suprimir sync de query params quando usando inputs
         this.paramSyncSuppressed.set(true);
       }
@@ -278,6 +290,7 @@ export class ViewerPageComponent implements OnDestroy {
     this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       console.log('[WATCH-PARAMS] All params:', params.keys);
       console.log('[WATCH-PARAMS] urls param:', params.get('urls'));
+      console.log('[WATCH-PARAMS] titles param:', params.get('titles'));
       console.log('[WATCH-PARAMS] url param:', params.get('url'));
       
       if (this.paramSyncSuppressed()) {
@@ -292,17 +305,19 @@ export class ViewerPageComponent implements OnDestroy {
       }
 
       const urlsParam = params.get('urls');
+      const titlesParam = params.get('titles');
       const fallbackUrl = params.get('url');
       const activeId = params.get('active');
 
       const urls = parseUrlsParam(urlsParam, fallbackUrl);
+      const titles = parseTitlesParam(titlesParam);
 
       if (!urls.length) {
         this.viewerState.applyExternalSources([], null);
         return;
       }
 
-      this.viewerState.applyExternalSources(urls, activeId);
+      this.viewerState.applyExternalSources(urls, activeId, titles);
     });
   }
 
@@ -993,6 +1008,48 @@ export class ViewerPageComponent implements OnDestroy {
     this.tapZoneObserver?.disconnect();
     this.tapZoneObserver = undefined;
   }
+}
+
+function parseTitlesParam(titlesParam: string | null): string[] {
+  console.log('[PARSE-TITLES] Raw titlesParam:', titlesParam);
+  
+  if (!titlesParam) {
+    return [];
+  }
+
+  let decoded = titlesParam;
+  
+  // Verificar se está em Base64
+  const looksLikeBase64 = !titlesParam.includes('://') && 
+                         /^[A-Za-z0-9+/=-]+$/.test(titlesParam) &&
+                         titlesParam.length > 10;
+  
+  if (looksLikeBase64) {
+    try {
+      decoded = atob(titlesParam);
+      console.log('[PARSE-TITLES] Decoded from Base64:', decoded);
+    } catch (e) {
+      console.error('[PARSE-TITLES] Base64 decode failed:', e);
+      decoded = titlesParam;
+    }
+  } else {
+    // Não é Base64, pode ser encoded
+    try {
+      decoded = decodeURIComponent(titlesParam);
+      console.log('[PARSE-TITLES] Decoded from URI component');
+    } catch (e) {
+      decoded = titlesParam;
+    }
+  }
+  
+  // Split por vírgula ou pipe
+  const split = decoded.split(/[|,]/);
+  console.log('[PARSE-TITLES] Split into', split.length, 'titles');
+  
+  const result = split.map((value) => value.trim()).filter(Boolean);
+  console.log('[PARSE-TITLES] Final:', result.length, 'valid titles');
+  
+  return result;
 }
 
 function parseUrlsParam(urlsParam: string | null, fallbackUrl: string | null): string[] {

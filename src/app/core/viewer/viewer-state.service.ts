@@ -30,7 +30,7 @@ export class ViewerStateService {
     return this.stateSubject.value;
   }
 
-  applyExternalSources(urls: string[], activeId?: string | null): void {
+  applyExternalSources(urls: string[], activeId?: string | null, titles?: string[]): void {
     console.log('[APPLY-SOURCES] Input URLs:', urls);
     
     const normalized = this.normalizeUrls(urls);
@@ -68,12 +68,14 @@ export class ViewerStateService {
           } satisfies ViewerDocument;
         }
         
-        const newDoc = buildDocumentFromUrl(url);
+        const customTitle = titles?.[index];
+        const newDoc = buildDocumentFromUrl(url, customTitle);
         console.log(`[APPLY-SOURCES] Doc ${index}: Created new`, {
           name: newDoc.name,
           id: newDoc.id,
           url: newDoc.url,
-          initialPage: newDoc.initialPage
+          initialPage: newDoc.initialPage,
+          customTitle: newDoc.customTitle
         });
         return newDoc;
       });
