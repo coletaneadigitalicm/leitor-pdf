@@ -1,5 +1,7 @@
 <div
+  #appShell
   class="app-shell"
+  [class.git-submodule-mode]="isGitSubmodule()"
   [style.background]="backgroundStyle.background"
   [style.--toolbar-height-desktop.px]="layout.toolbar.height.desktop"
   [style.--toolbar-height-mobile.px]="layout.toolbar.height.mobile"
