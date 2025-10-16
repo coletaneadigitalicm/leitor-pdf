@@ -26,7 +26,7 @@
     <div #canvas class="viewer__canvas" *ngIf="activeDocument() as doc">
       <ngx-extended-pdf-viewer
         #pdfViewer
-        [page]="currentPage"
+        [page]="currentDocPage()"
         (pageChange)="onPageChange($event)"
         [scrollMode]="pageScrollMode"
         [src]="getDocumentSource(doc)"
@@ -35,7 +35,7 @@
         [showFindButton]="true"
         [showDownloadButton]="true"
         [showPrintButton]="true"
-        [zoom]="'auto'"
+        [zoom]="currentDocZoom()"
         [textLayer]="true"
         (pdfLoaded)="onPdfLoaded(doc.id, $event)"
         (pdfLoadingFailed)="onPdfLoadFailed(doc.id, $event)"

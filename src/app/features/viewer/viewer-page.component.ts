@@ -25,6 +25,7 @@ import { ViewerStateService } from '../../core/viewer/viewer-state.service';
 import { ViewerDocument } from '../../core/viewer/viewer-state.model';
 import { createInitialViewerState } from '../../core/viewer/viewer-state.util';
 import { ViewerSettingsService } from '../../core/viewer/viewer-settings.service';
+import { PdfCacheService } from '../../core/viewer/pdf-cache.service';
 import { DocumentCarouselComponent } from './document-carousel.component';
 
 @Component({
@@ -44,6 +45,7 @@ export class ViewerPageComponent implements OnDestroy {
   private readonly router = inject(Router);
   private readonly viewerState = inject(ViewerStateService);
   private readonly viewerSettings = inject(ViewerSettingsService);
+  private readonly pdfCache = inject(PdfCacheService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly ngZone = inject(NgZone);
 
@@ -88,6 +90,21 @@ export class ViewerPageComponent implements OnDestroy {
 
   protected readonly viewerSettingsSnapshot = toSignal(this.viewerSettings.settings$, {
     initialValue: this.viewerSettings.snapshot,
+  });
+
+  // Computed signals for current document state
+  protected readonly currentDocPage = computed(() => {
+    const doc = this.activeDocument();
+    // Only use saved page if document is ready, otherwise use currentPage
+    if (doc?.status === 'ready' && doc.lastViewedPage) {
+      return doc.lastViewedPage;
+    }
+    return this.currentPage;
+  });
+
+  protected readonly currentDocZoom = computed(() => {
+    const doc = this.activeDocument();
+    return doc?.lastZoomLevel ?? 'auto';
   });
 
   private tapZoneObserver?: MutationObserver;
@@ -138,11 +155,23 @@ export class ViewerPageComponent implements OnDestroy {
   }
 
   protected onDocumentClosed(documentId: string): void {
+    const doc = this.state().documents.find(d => d.id === documentId);
+    
+    // Revoke Blob URL if exists
+    if (doc?.cachedBlobUrl) {
+      URL.revokeObjectURL(doc.cachedBlobUrl);
+    }
+    
+    // Clean up cache for URL-based documents
+    if (doc?.sourceType === 'url' && doc.url) {
+      this.pdfCache.revoke(doc.url);
+    }
+    
     this.viewerState.closeDocument(documentId);
     this.syncQueryParams();
   }
 
-  protected onPdfLoaded(docId: string, event: PdfLoadedEvent): void {
+  protected async onPdfLoaded(docId: string, event: PdfLoadedEvent): Promise<void> {
     const doc = this.state().documents.find(d => d.id === docId);
     console.log('[PDF-LOADED]', {
       docId,
@@ -158,11 +187,27 @@ export class ViewerPageComponent implements OnDestroy {
     
     this.totalPages = totalPages;
     
-    // Usar initialPage do documento
+    // Usar initialPage do documento se disponível e válido
     if (doc?.initialPage && doc.initialPage <= totalPages) {
       this.currentPage = doc.initialPage;
     } else {
       this.currentPage = 1;
+    }
+    
+    // Save current page as lastViewedPage
+    this.viewerState.updateDocumentState(docId, { page: this.currentPage });
+
+    // Cache URL-based documents
+    if (doc?.sourceType === 'url' && doc.url && !doc.cachedBlobUrl) {
+      try {
+        const blobUrl = await this.pdfCache.cacheUrl(doc.url);
+        this.viewerState.updateDocumentState(docId, { 
+          cachedBlobUrl: blobUrl 
+        });
+        console.log('[PDF-CACHE] Cached:', doc.name);
+      } catch (error) {
+        console.warn('[PDF-CACHE] Failed to cache:', error);
+      }
     }
 
     if (this.activeDocument()?.id === docId) {
@@ -182,11 +227,24 @@ export class ViewerPageComponent implements OnDestroy {
 
   protected onPageChange(page: number): void {
     console.debug('[viewer] pageChange emitted', { page });
-    this.currentPage = page;
+    
+    // Save page state to document
+    const doc = this.activeDocument();
+    if (doc) {
+      this.viewerState.updateDocumentState(doc.id, { page });
+    }
+    
+    this.currentPage = page; // Keep for backward compat
     this.updatePageTapZones();
   }
 
   protected onZoomChange(zoom: string | number | undefined): void {
+    // Save zoom state to document
+    const doc = this.activeDocument();
+    if (doc && zoom) {
+      this.viewerState.updateDocumentState(doc.id, { zoom });
+    }
+    
     const settings = this.viewerSettingsSnapshot();
     
     // Only auto-disable if feature is enabled in settings
@@ -218,12 +276,19 @@ export class ViewerPageComponent implements OnDestroy {
 
   protected getDocumentSource(doc: ViewerDocument): string | File {
     if (doc.sourceType === 'file') {
-      return doc.file!;
+      // Convert File to Blob URL if needed
+      if (!doc.cachedBlobUrl && doc.file) {
+        const blobUrl = URL.createObjectURL(doc.file);
+        this.viewerState.updateDocumentState(doc.id, { 
+          cachedBlobUrl: blobUrl 
+        });
+        return blobUrl;
+      }
+      return doc.cachedBlobUrl ?? doc.file!;
     }
-
-    // Retornar URL diretamente sem timestamp para evitar re-renderização infinita
-    // O timestamp será adicionado apenas quando necessário
-    return doc.url ?? '';
+    
+    // Return cached Blob URL if available
+    return doc.cachedBlobUrl ?? doc.url ?? '';
   }
 
   private syncQueryParams(): void {
@@ -249,7 +314,7 @@ export class ViewerPageComponent implements OnDestroy {
 
     // Encode custom titles only if there are any
     const titlesString = customTitles.length ? customTitles.join('|') : null;
-    const encodedTitles = titlesString ? btoa(titlesString) : null;
+    const encodedTitles = titlesString ? btoa(encodeURIComponent(titlesString)) : null;
 
     const queryParams: Record<string, string | null> = {
       url: encodedSingleUrl,
@@ -378,11 +443,11 @@ export class ViewerPageComponent implements OnDestroy {
         return;
       }
 
-      // Usar initialPage se disponível e documento ainda não carregado
-      if (doc.initialPage && doc.status !== 'ready') {
+      // Use lastViewedPage if document is ready, otherwise use initialPage or 1
+      if (doc.status === 'ready' && doc.lastViewedPage) {
+        this.currentPage = doc.lastViewedPage;
+      } else if (doc.initialPage) {
         this.currentPage = doc.initialPage;
-      } else if (doc.status === 'ready') {
-        // Manter página atual se já carregado
       } else {
         this.currentPage = 1;
       }
@@ -1026,8 +1091,10 @@ function parseTitlesParam(titlesParam: string | null): string[] {
   
   if (looksLikeBase64) {
     try {
-      decoded = atob(titlesParam);
-      console.log('[PARSE-TITLES] Decoded from Base64:', decoded);
+      // Decodificar Base64 e depois URI component para preservar acentos
+      const base64Decoded = atob(titlesParam);
+      decoded = decodeURIComponent(base64Decoded);
+      console.log('[PARSE-TITLES] Decoded from Base64 + URI:', decoded);
     } catch (e) {
       console.error('[PARSE-TITLES] Base64 decode failed:', e);
       decoded = titlesParam;
@@ -1042,8 +1109,8 @@ function parseTitlesParam(titlesParam: string | null): string[] {
     }
   }
   
-  // Split por vírgula ou pipe
-  const split = decoded.split(/[|,]/);
+  // Split APENAS por pipe (|) - vírgulas são parte do título
+  const split = decoded.split('|');
   console.log('[PARSE-TITLES] Split into', split.length, 'titles');
   
   const result = split.map((value) => value.trim()).filter(Boolean);

@@ -351,6 +351,21 @@ export class ViewerStateService {
     return normalized;
   }
 
+  updateDocumentState(docId: string, state: {
+    page?: number;
+    zoom?: string | number;
+    scrollY?: number;
+    cachedBlobUrl?: string;
+  }): void {
+    this.updateDocument(docId, (doc) => ({
+      ...doc,
+      lastViewedPage: state.page ?? doc.lastViewedPage,
+      lastZoomLevel: state.zoom ?? doc.lastZoomLevel,
+      lastScrollY: state.scrollY ?? doc.lastScrollY,
+      cachedBlobUrl: state.cachedBlobUrl ?? doc.cachedBlobUrl,
+    }));
+  }
+
   private buildCombinationKey(urls: string[]): string {
     return urls.join('||');
   }
