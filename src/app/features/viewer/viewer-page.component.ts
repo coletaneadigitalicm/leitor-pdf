@@ -26,6 +26,7 @@ import { ViewerDocument } from '../../core/viewer/viewer-state.model';
 import { createInitialViewerState } from '../../core/viewer/viewer-state.util';
 import { ViewerSettingsService } from '../../core/viewer/viewer-settings.service';
 import { PdfCacheService } from '../../core/viewer/pdf-cache.service';
+import { GitSubmoduleService } from '../../core/config/git-submodule.service';
 import { DocumentCarouselComponent } from './document-carousel.component';
 
 @Component({
@@ -40,12 +41,14 @@ export class ViewerPageComponent implements OnDestroy {
   @Input() urls?: string[];  // URLs to load
   @Input() titles?: string[];  // Custom titles for documents
   @Input() activeDocumentId?: string;  // Which document to show initially
+  @Input() isGitSubmodule?: boolean;  // Hide toolbar when used as git submodule
   
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly viewerState = inject(ViewerStateService);
   private readonly viewerSettings = inject(ViewerSettingsService);
   private readonly pdfCache = inject(PdfCacheService);
+  private readonly gitSubmodule = inject(GitSubmoduleService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly ngZone = inject(NgZone);
 
@@ -115,6 +118,7 @@ export class ViewerPageComponent implements OnDestroy {
     this.watchQueryParams();
     this.resetPaginationOnDocumentChange();
     this.watchViewerSettingsChanges();
+    this.initializeGitSubmoduleMode();
   }
 
   protected retry(): void {
@@ -335,10 +339,16 @@ export class ViewerPageComponent implements OnDestroy {
 
   private watchInputChanges(): void {
     effect(() => {
-      // Observar mudanças nos inputs (urls, titles e activeDocumentId)
+      // Observar mudanças nos inputs (urls, titles, activeDocumentId e isGitSubmodule)
       const inputUrls = this.urls;
       const inputTitles = this.titles;
       const inputActiveId = this.activeDocumentId;
+      const inputIsGitSubmodule = this.isGitSubmodule;
+      
+      // Update git submodule mode
+      if (inputIsGitSubmodule !== undefined) {
+        this.gitSubmodule.setGitSubmoduleMode(inputIsGitSubmodule);
+      }
       
       // Inputs têm prioridade sobre query params para melhor suporte offline
       if (inputUrls && inputUrls.length > 0) {
@@ -356,7 +366,16 @@ export class ViewerPageComponent implements OnDestroy {
       console.log('[WATCH-PARAMS] All params:', params.keys);
       console.log('[WATCH-PARAMS] urls param:', params.get('urls'));
       console.log('[WATCH-PARAMS] titles param:', params.get('titles'));
+      console.log('[WATCH-PARAMS] isGitSubmodule param:', params.get('isGitSubmodule'));
       console.log('[WATCH-PARAMS] url param:', params.get('url'));
+      
+      // Process isGitSubmodule parameter
+      const isGitSubmoduleParam = params.get('isGitSubmodule');
+      if (isGitSubmoduleParam !== null) {
+        const isGitSubmodule = this.gitSubmodule.parseGitSubmoduleParam(isGitSubmoduleParam);
+        this.gitSubmodule.setGitSubmoduleMode(isGitSubmodule);
+        console.log('[WATCH-PARAMS] Git submodule mode:', isGitSubmodule);
+      }
       
       if (this.paramSyncSuppressed()) {
         return;
@@ -462,6 +481,18 @@ export class ViewerPageComponent implements OnDestroy {
       // React to viewer settings changes
       this.viewerSettingsSnapshot();
       this.updatePageTapZones();
+    });
+  }
+
+  private initializeGitSubmoduleMode(): void {
+    // Initialize git submodule mode from query params if available
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
+      const isGitSubmoduleParam = params.get('isGitSubmodule');
+      if (isGitSubmoduleParam !== null) {
+        const isGitSubmodule = this.gitSubmodule.parseGitSubmoduleParam(isGitSubmoduleParam);
+        this.gitSubmodule.setGitSubmoduleMode(isGitSubmodule);
+        console.log('[INIT] Git submodule mode initialized:', isGitSubmodule);
+      }
     });
   }
 
